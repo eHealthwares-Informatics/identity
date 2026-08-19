@@ -10,5 +10,6 @@ export class User {
     public roles: any[] = [],
     public readonly phone?: string,
     public readonly email?: string,
+    public readonly loginTimeoutMinutes?: number | null,
   ) {}
 }

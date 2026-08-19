@@ -28,6 +28,7 @@ export class IdentityMapper {
       orm.roles,
       orm.phone,
       orm.email,
+      orm.loginTimeoutMinutes,
     );
   }
 }

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayNotEmpty, IsArray, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'cashier01' })
@@ -33,4 +33,10 @@ export class CreateUserDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   roleCodes?: string[];
+
+  @ApiPropertyOptional({ description: 'Per-user session timeout in minutes (null = system default)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  loginTimeoutMinutes?: number | null;
 }

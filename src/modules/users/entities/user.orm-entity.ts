@@ -27,6 +27,9 @@ export class UserOrmEntity {
   @Column({ type: 'text', nullable: true })
   email?: string;
 
+  @Column({ name: 'login_timeout_minutes', type: 'integer', nullable: true })
+  loginTimeoutMinutes!: number | null;
+
   @ManyToMany('RoleOrmEntity', 'users')
   @JoinTable({
     name: 'user_roles',

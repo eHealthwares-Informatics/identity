@@ -47,6 +47,7 @@ export class UsersController {
       email: user.email,
       roles: user.roleCodes ?? [],
       isActive: user.isActive,
+      loginTimeoutMinutes: user.loginTimeoutMinutes ?? null,
     };
   }
 

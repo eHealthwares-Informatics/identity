@@ -44,16 +44,19 @@ export class LoginUseCase {
       : [];
     const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
 
-    const tokenPair = await this.tokenIssuer.issuePair({
-      sub: user.id,
-      organizationId: user.organizationId ?? '',
-      locationId: user.locationId,
-      username: user.username,
-      roles: user.roleCodes,
-      permissions,
-      phone: user.phone,
-      email: user.email ?? user.id,
-    });
+    const tokenPair = await this.tokenIssuer.issuePair(
+      {
+        sub: user.id,
+        organizationId: user.organizationId ?? '',
+        locationId: user.locationId,
+        username: user.username,
+        roles: user.roleCodes,
+        permissions,
+        phone: user.phone,
+        email: user.email ?? user.id,
+      },
+      user.loginTimeoutMinutes ?? undefined,
+    );
 
     const refreshTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);
     await this.refreshTokenRepository.persist(

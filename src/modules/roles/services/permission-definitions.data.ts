@@ -120,6 +120,21 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     ],
   },
   {
+    module: 'emr',
+    moduleDisplayName: 'EMR',
+    permissions: [
+      { code: 'emr.patient.create', name: 'Create Patient', description: 'Create patient records', resource: 'patient', action: 'create' },
+      { code: 'emr.patient.read', name: 'Read Patient', description: 'View patient records', resource: 'patient', action: 'read' },
+      { code: 'emr.patient.update', name: 'Update Patient', description: 'Modify patient records', resource: 'patient', action: 'update' },
+      { code: 'emr.appointment.create', name: 'Create Appointment', description: 'Schedule appointments', resource: 'appointment', action: 'create' },
+      { code: 'emr.appointment.read', name: 'Read Appointment', description: 'View appointments', resource: 'appointment', action: 'read' },
+      { code: 'emr.visit.read', name: 'Read Visit', description: 'View patient visits', resource: 'visit', action: 'read' },
+      { code: 'emr.encounter.read', name: 'Read Encounter', description: 'View clinical encounters', resource: 'encounter', action: 'read' },
+      { code: 'emr.form.read', name: 'Read Form', description: 'View clinical form definitions', resource: 'form', action: 'read' },
+      { code: 'emr.request.read', name: 'Read Request', description: 'View clinical requests', resource: 'request', action: 'read' },
+    ],
+  },
+  {
     module: 'conversation',
     moduleDisplayName: 'Conversation',
     permissions: [

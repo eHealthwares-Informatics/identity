@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'cashier01' })
@@ -38,4 +38,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: 'Per-user session timeout in minutes (null = system default)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  loginTimeoutMinutes?: number | null;
 }

@@ -1,10 +1,13 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { AuthResponseDto } from '../dto/auth-response.dto';
 import { LoginDto } from '../dto/login.dto';
+import { LogoutAllDto } from '../dto/logout-all.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginUseCase } from '../services/login.use-case';
+import { LogoutAllUseCase } from '../services/logout-all.use-case';
+import { LogoutUseCase } from '../services/logout.use-case';
 import { RefreshTokenUseCase } from '../services/refresh-token.use-case';
 import { RegisterUseCase } from '../services/register.use-case';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
@@ -29,6 +32,8 @@ export class AuthController {
     private readonly loginUseCase: LoginUseCase,
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
     private readonly registerUseCase: RegisterUseCase,
+    private readonly logoutUseCase: LogoutUseCase,
+    private readonly logoutAllUseCase: LogoutAllUseCase,
   ) {}
 
   @Public()
@@ -53,6 +58,25 @@ export class AuthController {
   @ApiOperation({ summary: 'Rotate refresh token and issue a new token pair' })
   refreshToken(@Body() payload: RefreshTokenDto): Promise<AuthResponseDto> {
     return this.refreshTokenUseCase.execute(payload);
+  }
+
+  @Public()
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke the presented refresh token (sign out this device)' })
+  logout(@Body() payload: RefreshTokenDto): Promise<void> {
+    return this.logoutUseCase.execute(payload);
+  }
+
+  @Public()
+  @Post('logout-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke all refresh tokens for the user (sign out every device)' })
+  logoutAll(
+    @Headers('authorization') authHeader: string | undefined,
+    @Body() payload: LogoutAllDto,
+  ): Promise<void> {
+    return this.logoutAllUseCase.execute(authHeader, payload.refreshToken);
   }
 
   @Get('me')

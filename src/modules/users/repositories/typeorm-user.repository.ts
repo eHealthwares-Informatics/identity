@@ -41,6 +41,7 @@ export class TypeormUserRepository implements UserRepository {
       isActive: user.isActive,
       phone: user.phone,
       email: user.email,
+      loginTimeoutMinutes: user.loginTimeoutMinutes ?? null,
       roles: user.roles,
     });
 
@@ -64,6 +65,7 @@ export class TypeormUserRepository implements UserRepository {
     existing.isActive = user.isActive;
     existing.phone = user.phone;
     existing.email = user.email;
+    existing.loginTimeoutMinutes = user.loginTimeoutMinutes ?? null;
 
     const saved = await this.userRepository.save(existing);
     const reloaded = await this.userRepository.findOneOrFail({
@@ -81,9 +83,13 @@ export class TypeormUserRepository implements UserRepository {
   }
 
   async list(offset: number, limit: number, organizationId: string): Promise<{ items: User[]; total: number }> {
+    const where: any = { isActive: true };
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
     const [items, total] = await this.userRepository.findAndCount({
       relations: { roles: true },
-      where: { organizationId, isActive: true },
+      where,
       skip: offset,
       take: limit,
       order: { createdAt: 'DESC' },

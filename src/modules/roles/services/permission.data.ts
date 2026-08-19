@@ -6,6 +6,7 @@ export const AVAILABLE_MODULES: ModuleInfoDto[] = [
   { id: 'communication', name: 'Switch', description: 'Messaging & Routing', root: '/messages' },
   { id: 'coding-concept', name: 'Coding Concept', description: 'Terminology', root: '/coding-concepts' },
   { id: 'lis', name: 'LIS', description: 'Laboratory', root: '/lis' },
+  { id: 'emr', name: 'EMR', description: 'Electronic Medical Record', root: '/emr' },
   { id: 'admin', name: 'Admin Console', description: 'Administration', root: '/users' },
   { id: 'website', name: 'Website Console', description: 'Website', root: '/damorex' },
 ];

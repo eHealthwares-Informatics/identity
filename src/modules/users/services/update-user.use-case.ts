@@ -36,6 +36,12 @@ export class UpdateUserUseCase {
       ? await this.passwordHasher.hash(payload.password)
       : user.passwordHash;
 
+    // undefined = leave unchanged; null = explicitly clear back to system default
+    const loginTimeoutMinutes =
+      payload.loginTimeoutMinutes === undefined
+        ? user.loginTimeoutMinutes
+        : payload.loginTimeoutMinutes;
+
     const updatedUser = new User(
       userId,
       user.organizationId,
@@ -47,6 +53,7 @@ export class UpdateUserUseCase {
       roles,
       payload.phone ?? user.phone,
       payload.email ?? user.email,
+      loginTimeoutMinutes,
     );
 
     return this.userRepository.update(updatedUser, organizationId ?? undefined);

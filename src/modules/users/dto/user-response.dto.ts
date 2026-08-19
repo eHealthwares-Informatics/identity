@@ -24,4 +24,7 @@ export class UserResponseDto {
 
   @ApiProperty()
   isActive!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  loginTimeoutMinutes?: number | null;
 }

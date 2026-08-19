@@ -10,10 +10,20 @@ When adding new seed roles, permissions, users, or configuration entities.
 
 ## Workflow
 
-1. Add data to `src/database/seeds/seed-identity.ts` using the existing upsert pattern.
-2. Gate behind `SEED_ON_START=true` env var (default: `true`).
-3. Ensure seeds are idempotent — use upsert by unique key (e.g., role `code`, user `username + organizationId`).
+1. Seed data for identity lives in the standalone **`seed/`** service (single owner
+   per `IMPORT_ARCHITECTURE.md`). Identity itself no longer runs a local seed engine.
+2. Add/update data under `seed/seeds/identity/inline/` (e.g. `permissions.json`,
+   `roles.json`, `role_permissions.json`, `users.json`, `user_roles.json`,
+   `organizations.json`, `locations.json`).
+3. Register/adjust the per-entity `ImportEntityConfig` in `seed/src/config/import-config.ts`
+   (target `identity`).
+4. Run with `npm run seed` in `seed/`, or `POST /api/imports` on the seed service.
+5. Roles/permissions/users must stay idempotent — upsert by unique key (role `code`,
+   user `username`, junction rows by the FK pair).
 
 ## Refactoring
 
-When adding new permissions, follow the dot-notation pattern: `module.resource.action` (e.g., `rxsoft.catalog.item.create`). Add to both the permission definitions data and the role that should inherit it.
+When adding new permissions, follow the dot-notation pattern: `module.resource.action`
+(e.g., `rxsoft.catalog.item.create`). Add to both the permission definitions data
+(`seed/seeds/identity/inline/permissions.json`) and the role that should inherit it
+(`role_permissions.json`).

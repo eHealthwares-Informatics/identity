@@ -7,7 +7,6 @@ import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { LocationsModule } from './modules/locations/locations.module';
-import { DatabaseSeedService } from './database/seeding.service';
 
 @Module({
   imports: [
@@ -36,6 +35,5 @@ import { DatabaseSeedService } from './database/seeding.service';
     OrganizationsModule,
     LocationsModule,
   ],
-  providers: [DatabaseSeedService],
 })
 export class AppModule {}

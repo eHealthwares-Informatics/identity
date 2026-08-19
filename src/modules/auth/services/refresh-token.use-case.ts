@@ -40,14 +40,26 @@ export class RefreshTokenUseCase {
 
     await this.refreshTokenRepository.revoke(user.id, tokenHash);
 
-    return this.tokenIssuer.issuePair({
-      sub: decoded.sub,
-      organizationId: user.organizationId ?? '',
-      locationId: user.locationId,
-      username: decoded.username,
-      roles: decoded.roles,
-      email: decoded.email,
-      permissions: decoded.permissions,
-    });
+    const tokenPair = await this.tokenIssuer.issuePair(
+      {
+        sub: decoded.sub,
+        organizationId: user.organizationId ?? '',
+        locationId: user.locationId,
+        username: decoded.username,
+        roles: decoded.roles,
+        email: decoded.email,
+        permissions: decoded.permissions,
+      },
+      user.loginTimeoutMinutes ?? undefined,
+    );
+
+    const newTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);
+    await this.refreshTokenRepository.persist(
+      user.id,
+      newTokenHash,
+      new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
+    );
+
+    return tokenPair;
   }
 }

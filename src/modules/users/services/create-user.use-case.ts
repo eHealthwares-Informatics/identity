@@ -46,6 +46,7 @@ export class CreateUserUseCase {
       [],
       payload.phone,
       payload.email,
+      payload.loginTimeoutMinutes ?? null,
     );
 
     return this.userRepository.create(user);
