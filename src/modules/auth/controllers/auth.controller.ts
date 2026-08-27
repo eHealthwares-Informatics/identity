@@ -10,6 +10,8 @@ import { LogoutAllUseCase } from '../services/logout-all.use-case';
 import { LogoutUseCase } from '../services/logout.use-case';
 import { RefreshTokenUseCase } from '../services/refresh-token.use-case';
 import { RegisterUseCase } from '../services/register.use-case';
+import { OnboardOrganisationService } from '../services/onboard-organisation.service';
+import { OnboardOrganisationDto } from '../dto/onboard-organisation.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { RequestUser } from '../../../common/decorators/current-user.decorator';
@@ -32,6 +34,7 @@ export class AuthController {
     private readonly loginUseCase: LoginUseCase,
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
     private readonly registerUseCase: RegisterUseCase,
+    private readonly onboardOrganisationService: OnboardOrganisationService,
     private readonly logoutUseCase: LogoutUseCase,
     private readonly logoutAllUseCase: LogoutAllUseCase,
   ) {}
@@ -42,6 +45,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new website user' })
   register(@Body() payload: RegisterDto): Promise<AuthResponseDto> {
     return this.registerUseCase.execute(payload);
+  }
+
+  @Public()
+  @Post('onboard-organization')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Onboard a new organisation (creates org, roles, users + reference data)',
+  })
+  onboardOrganization(@Body() payload: OnboardOrganisationDto) {
+    return this.onboardOrganisationService.execute(payload);
   }
 
   @Public()

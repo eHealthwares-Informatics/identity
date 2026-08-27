@@ -1,12 +1,13 @@
-import { Column, CreateDateColumn, DeleteDateColumn, Entity, JoinTable, ManyToMany, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinTable, ManyToMany, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 
 @Entity('users')
 @Unique('uq_users_org_username', ['organizationId', 'username'])
+@Index('uq_users_email', ['email'], { unique: true })
 export class UserOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'organization_id', type: 'text', nullable: true })
+  @Column({ name: 'organization_id', type: 'uuid', nullable: true })
   organizationId!: string | null;
 
   @Column({ name: 'location_id', type: 'text', nullable: true })

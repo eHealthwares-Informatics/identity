@@ -29,8 +29,9 @@ export class JwtTokenIssuerService implements TokenIssuerPort {
 
   async issuePair(payload: TokenPayload, loginTimeoutMinutes?: number): Promise<TokenPair> {
     // Per-user override wins, clamped to [1, max]; otherwise the global default.
-    const requested = loginTimeoutMinutes ?? this.defaultAccessTokenExpiresIn;
-    const accessExpiresIn = Math.min(Math.max(1, Math.floor(requested)), this.maxAccessTokenExpiresIn);
+    const requestedMins = loginTimeoutMinutes ?? this.defaultAccessTokenExpiresIn;
+    const accessExpiresInMin = Math.min(Math.max(1, Math.floor(requestedMins)), this.maxAccessTokenExpiresIn);
+    const accessExpiresIn = accessExpiresInMin * 60;
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET', 'admin-access-secret'),

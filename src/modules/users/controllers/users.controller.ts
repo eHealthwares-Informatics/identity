@@ -102,6 +102,18 @@ export class UsersController {
     return this.toResponse(user);
   }
 
+  @Patch(':id')
+  @Roles('admin', 'super_admin')
+  @ApiOperation({ summary: 'Partially update a user' })
+  async patch(
+    @Param('id') id: string,
+    @Body() payload: UpdateUserDto,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<UserResponseDto> {
+    const user = await this.updateUserUseCase.execute(id, payload, currentUser.organizationId);
+    return this.toResponse(user);
+  }
+
   @Delete(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete a user' })

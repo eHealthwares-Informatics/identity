@@ -7,7 +7,12 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { RequestUser } from '../../../common/decorators/current-user.decorator';
 import { ListLocationsUseCase } from '../services/list-locations.use-case';
 import { GetLocationUseCase } from '../services/get-location.use-case';
+import { CreateLocationUseCase } from '../services/create-location.use-case';
+import { UpdateLocationUseCase } from '../services/update-location.use-case';
+import { DeleteLocationUseCase } from '../services/delete-location.use-case';
 import { Location } from '../domains/location.entity';
+import { CreateLocationDto } from '../dto/create-location.dto';
+import { UpdateLocationDto } from '../dto/update-location.dto';
 
 type LocationResponse = {
   id: string;
@@ -31,6 +36,9 @@ export class LocationsController {
   constructor(
     private readonly listLocationsUseCase: ListLocationsUseCase,
     private readonly getLocationUseCase: GetLocationUseCase,
+    private readonly createLocationUseCase: CreateLocationUseCase,
+    private readonly updateLocationUseCase: UpdateLocationUseCase,
+    private readonly deleteLocationUseCase: DeleteLocationUseCase,
   ) {}
 
   private toResponse(location: Location): LocationResponse {
@@ -58,11 +66,13 @@ export class LocationsController {
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20, description: 'Items per page' })
   @ApiQuery({ name: 'search', required: false, type: String, example: 'Warehouse', description: 'Search by location name or code' })
+  @ApiQuery({ name: 'parentId', required: false, type: String, description: 'Filter by parent location id (root sites when omitted are all; use empty to list root sites only)' })
   @ApiQuery({ name: 'organizationId', required: false, type: String, description: 'Org scope override (service-to-service only)' })
   async list(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('search') search: string | undefined,
+    @Query('parentId') parentId: string | undefined,
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationsListResponse> {
@@ -72,6 +82,7 @@ export class LocationsController {
       limit,
       this.resolveOrganizationId(organizationId, currentUser),
       search,
+      parentId,
     );
     return {
       data: result.items.map((location) => this.toResponse(location)),
@@ -100,28 +111,64 @@ export class LocationsController {
   @Post()
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create a location' })
-  async create(@Body() payload: any, @CurrentUser() currentUser: RequestUser) {
-    return { ...payload, organizationId: currentUser.organizationId };
+  async create(
+    @Body() payload: CreateLocationDto,
+    @Query('organizationId') organizationId: string | undefined,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<LocationResponse> {
+    const location = await this.createLocationUseCase.execute(
+      payload,
+      this.resolveOrganizationId(organizationId, currentUser),
+    );
+    return this.toResponse(location);
   }
 
   @Put(':id')
   @Roles('admin', 'super_admin')
-  @ApiOperation({ summary: 'Update a location' })
-  async update(@Param('id') id: string, @Body() payload: any) {
-    return { id, ...payload };
+  @ApiOperation({ summary: 'Replace a location' })
+  async update(
+    @Param('id') id: string,
+    @Body() payload: UpdateLocationDto,
+    @Query('organizationId') organizationId: string | undefined,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<LocationResponse> {
+    const location = await this.updateLocationUseCase.execute(
+      id,
+      payload,
+      this.resolveOrganizationId(organizationId, currentUser),
+    );
+    return this.toResponse(location);
   }
 
   @Patch(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Partially update a location' })
-  async patch(@Param('id') id: string, @Body() payload: any) {
-    return { id, ...payload };
+  async patch(
+    @Param('id') id: string,
+    @Body() payload: UpdateLocationDto,
+    @Query('organizationId') organizationId: string | undefined,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<LocationResponse> {
+    const location = await this.updateLocationUseCase.execute(
+      id,
+      payload,
+      this.resolveOrganizationId(organizationId, currentUser),
+    );
+    return this.toResponse(location);
   }
 
   @Delete(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete a location' })
-  async delete(@Param('id') id: string) {
+  async delete(
+    @Param('id') id: string,
+    @Query('organizationId') organizationId: string | undefined,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<{ ok: boolean }> {
+    await this.deleteLocationUseCase.execute(
+      id,
+      this.resolveOrganizationId(organizationId, currentUser),
+    );
     return { ok: true };
   }
 }

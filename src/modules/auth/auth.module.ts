@@ -7,6 +7,7 @@ import { LogoutAllUseCase } from './services/logout-all.use-case';
 import { LogoutUseCase } from './services/logout.use-case';
 import { RefreshTokenUseCase } from './services/refresh-token.use-case';
 import { RegisterUseCase } from './services/register.use-case';
+import { OnboardOrganisationService } from './services/onboard-organisation.service';
 import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
 import { TypeormRefreshTokenRepository } from './repositories/typeorm-refresh-token.repository';
@@ -18,6 +19,7 @@ import { UserOrmEntity } from '../users/entities/user.orm-entity';
 import { RoleOrmEntity } from '../roles/entities/role.orm-entity';
 import { PermissionOrmEntity } from '../roles/entities/permission.orm-entity';
 import { LocationOrmEntity } from '../locations/entities/location.orm-entity';
+import { OrganizationOrmEntity } from '../organizations/entities/organization.orm-entity';
 import {
   LOCATION_REPOSITORY,
   PASSWORD_HASHER,
@@ -38,6 +40,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
       RoleOrmEntity,
       PermissionOrmEntity,
       LocationOrmEntity,
+      OrganizationOrmEntity,
     ]),
   ],
   controllers: [AuthController],
@@ -45,6 +48,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     LoginUseCase,
     RefreshTokenUseCase,
     RegisterUseCase,
+    OnboardOrganisationService,
     LogoutUseCase,
     LogoutAllUseCase,
     JwtAuthGuard,
@@ -67,6 +71,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     USER_REPOSITORY,
     ROLE_REPOSITORY,
     LOCATION_REPOSITORY,
+    REFRESH_TOKEN_REPOSITORY,
     TOKEN_ISSUER,
     PASSWORD_HASHER,
   ],

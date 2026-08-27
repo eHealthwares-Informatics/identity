@@ -26,6 +26,13 @@ export class CreateUserUseCase {
       }
     }
 
+    if (payload.email) {
+      const emailOwner = await this.userRepository.findByEmail(payload.email.trim().toLowerCase());
+      if (emailOwner) {
+        throw new BadRequestException('Email already in use');
+      }
+    }
+
     const roleCodes = payload.roleCodes ?? ['cashier'];
     if (organizationId) {
       const roles = await this.roleRepository.listByCodes(roleCodes, organizationId);

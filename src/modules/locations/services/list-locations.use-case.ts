@@ -9,7 +9,13 @@ export class ListLocationsUseCase {
     private readonly locationRepository: LocationRepository,
   ) {}
 
-  execute(offset: number, limit: number, organizationId: string, search?: string) {
-    return this.locationRepository.list({ offset, limit, organizationId, search });
+  execute(
+    offset: number,
+    limit: number,
+    organizationId: string,
+    search?: string,
+    parentId?: string,
+  ) {
+    return this.locationRepository.list({ offset, limit, organizationId, search, parentId });
   }
 }

@@ -29,7 +29,10 @@ export class LoginUseCase {
   ) {}
 
   async execute(payload: LoginDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
-    const user = await this.userRepository.findByUsername(payload.username);
+    const identifier = payload.username.trim();
+    const user = identifier.includes('@')
+      ? await this.userRepository.findByEmail(identifier.toLowerCase())
+      : await this.userRepository.findByUsername(identifier);
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }

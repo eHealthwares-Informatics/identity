@@ -3,8 +3,14 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
+import type { RefreshTokenRepository } from '../../auth/repositories/refresh-token.repository';
 import { User } from '../domains/user.entity';
-import { PASSWORD_HASHER, ROLE_REPOSITORY, USER_REPOSITORY } from '../../auth/services/identity.di-tokens';
+import {
+  PASSWORD_HASHER,
+  REFRESH_TOKEN_REPOSITORY,
+  ROLE_REPOSITORY,
+  USER_REPOSITORY,
+} from '../../auth/services/identity.di-tokens';
 
 @Injectable()
 export class UpdateUserUseCase {
@@ -15,6 +21,8 @@ export class UpdateUserUseCase {
     private readonly passwordHasher: PasswordHasherPort,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepository: RoleRepository,
+    @Inject(REFRESH_TOKEN_REPOSITORY)
+    private readonly refreshTokenRepository: RefreshTokenRepository,
   ) {}
 
   async execute(userId: string, payload: UpdateUserDto, organizationId: string | null): Promise<User> {
@@ -32,8 +40,9 @@ export class UpdateUserUseCase {
       }
     }
 
-    const passwordHash = payload.password
-      ? await this.passwordHasher.hash(payload.password)
+    const passwordChanged = Boolean(payload.password);
+    const passwordHash = passwordChanged
+      ? await this.passwordHasher.hash(payload.password!)
       : user.passwordHash;
 
     // undefined = leave unchanged; null = explicitly clear back to system default
@@ -56,6 +65,14 @@ export class UpdateUserUseCase {
       loginTimeoutMinutes,
     );
 
-    return this.userRepository.update(updatedUser, organizationId ?? undefined);
+    const saved = await this.userRepository.update(updatedUser, organizationId ?? undefined);
+
+    // Changing the password must invalidate every existing session so the old
+    // credentials can no longer be used (force re-login on all devices).
+    if (passwordChanged) {
+      await this.refreshTokenRepository.revokeAllForUser(userId);
+    }
+
+    return saved;
   }
 }

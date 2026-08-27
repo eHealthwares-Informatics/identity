@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayNotEmpty, IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'cashier01' })
@@ -19,7 +19,7 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({ example: 'user@example.com' })
   @IsOptional()
-  @IsString()
+  @IsEmail()
   email?: string;
 
   @ApiPropertyOptional({ description: 'Assigned location UUID' })
