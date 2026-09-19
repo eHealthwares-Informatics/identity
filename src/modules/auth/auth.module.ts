@@ -8,6 +8,8 @@ import { LogoutUseCase } from './services/logout.use-case';
 import { RefreshTokenUseCase } from './services/refresh-token.use-case';
 import { RegisterUseCase } from './services/register.use-case';
 import { OnboardOrganisationService } from './services/onboard-organisation.service';
+import { ShopperAuthService } from './services/shopper-auth.service';
+import { ConversationClient } from './services/conversation-client.service';
 import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
 import { TypeormRefreshTokenRepository } from './repositories/typeorm-refresh-token.repository';
@@ -15,6 +17,8 @@ import { TypeormUserRepository } from '../users/repositories/typeorm-user.reposi
 import { TypeormRoleRepository } from '../roles/repositories/typeorm-role.repository';
 import { TypeormLocationRepository } from '../locations/repositories/typeorm-location.repository';
 import { RefreshTokenOrmEntity } from './entities/refresh-token.orm-entity';
+import { PhoneOtpOrmEntity } from './entities/phone-otp.orm-entity';
+import { UserLoginEventOrmEntity } from './entities/user-login-event.orm-entity';
 import { UserOrmEntity } from '../users/entities/user.orm-entity';
 import { RoleOrmEntity } from '../roles/entities/role.orm-entity';
 import { PermissionOrmEntity } from '../roles/entities/permission.orm-entity';
@@ -36,6 +40,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     JwtModule.register({}),
     TypeOrmModule.forFeature([
       RefreshTokenOrmEntity,
+      PhoneOtpOrmEntity,
+      UserLoginEventOrmEntity,
       UserOrmEntity,
       RoleOrmEntity,
       PermissionOrmEntity,
@@ -49,6 +55,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     RefreshTokenUseCase,
     RegisterUseCase,
     OnboardOrganisationService,
+    ShopperAuthService,
+    ConversationClient,
     LogoutUseCase,
     LogoutAllUseCase,
     JwtAuthGuard,

@@ -9,6 +9,7 @@ export const AVAILABLE_MODULES: ModuleInfoDto[] = [
   { id: 'emr', name: 'EMR', description: 'Electronic Medical Record', root: '/emr' },
   { id: 'admin', name: 'Admin Console', description: 'Administration', root: '/users' },
   { id: 'website', name: 'Website Console', description: 'Website', root: '/damorex' },
+  { id: 'identity', name: 'Identity', description: 'Identity & Access', root: '/identity' },
 ];
 
 export function getUserModules(permissions: string[], roleCodes: string[] = []): ModuleInfoDto[] {

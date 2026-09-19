@@ -5,6 +5,7 @@ import { TypeOrmModuleOptions } from '@nestjs/typeorm/dist/interfaces/typeorm-op
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { RoleRequestsModule } from './modules/role-requests/role-requests.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { LocationsModule } from './modules/locations/locations.module';
 
@@ -32,6 +33,7 @@ import { LocationsModule } from './modules/locations/locations.module';
     AuthModule,
     UsersModule,
     RolesModule,
+    RoleRequestsModule,
     OrganizationsModule,
     LocationsModule,
   ],

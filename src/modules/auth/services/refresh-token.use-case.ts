@@ -1,9 +1,12 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
 import type { UserRepository } from '../../users/repositories/user.repository';
+import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import {
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
@@ -22,6 +25,8 @@ export class RefreshTokenUseCase {
     private readonly tokenIssuer: TokenIssuerPort,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
+    @InjectRepository(UserLoginEventOrmEntity)
+    private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
   ) {}
 
   async execute(payload: RefreshTokenDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
@@ -59,6 +64,12 @@ export class RefreshTokenUseCase {
       newTokenHash,
       new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
     );
+
+    await this.loginEventRepo.save({
+      userId: user.id,
+      eventType: 'refresh',
+      organizationId: user.organizationId ?? null,
+    });
 
     return tokenPair;
   }

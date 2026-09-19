@@ -55,6 +55,13 @@ export class RolesController {
     return roles.map(toResponse);
   }
 
+  @Get('catalog')
+  @ApiOperation({ summary: 'List requestable roles (codes + names) for any authenticated user' })
+  async catalog(@CurrentUser() currentUser: RequestUser): Promise<Array<{ code: string; name: string }>> {
+    const roles = await this.listRolesUseCase.execute(currentUser.organizationId ?? '');
+    return roles.map((r) => ({ code: r.code, name: r.name }));
+  }
+
   @Get(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Get a role by ID' })
