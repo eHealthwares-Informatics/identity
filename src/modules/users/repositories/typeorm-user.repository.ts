@@ -22,6 +22,15 @@ export class TypeormUserRepository implements UserRepository {
     return item ? IdentityMapper.toDomainUser(item) : null;
   }
 
+  async findByPhone(phone: string, organizationId?: string | null): Promise<User | null> {
+    const where: any = { phone };
+    if (organizationId !== undefined) {
+      where.organizationId = organizationId;
+    }
+    const item = await this.userRepository.findOne({ where, relations: { roles: true } });
+    return item ? IdentityMapper.toDomainUser(item) : null;
+  }
+
   async findByEmail(email: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { email };
     if (organizationId !== undefined) {

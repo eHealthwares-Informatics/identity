@@ -9,6 +9,7 @@ import { RefreshTokenUseCase } from './services/refresh-token.use-case';
 import { RegisterUseCase } from './services/register.use-case';
 import { OnboardOrganisationService } from './services/onboard-organisation.service';
 import { ShopperAuthService } from './services/shopper-auth.service';
+import { WebsiteAuthService } from './services/website-auth.service';
 import { ConversationClient } from './services/conversation-client.service';
 import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
@@ -24,6 +25,7 @@ import { RoleOrmEntity } from '../roles/entities/role.orm-entity';
 import { PermissionOrmEntity } from '../roles/entities/permission.orm-entity';
 import { LocationOrmEntity } from '../locations/entities/location.orm-entity';
 import { OrganizationOrmEntity } from '../organizations/entities/organization.orm-entity';
+import { ProvisionModule } from '../provision/provision.module';
 import {
   LOCATION_REPOSITORY,
   PASSWORD_HASHER,
@@ -38,6 +40,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 @Module({
   imports: [
     JwtModule.register({}),
+    ProvisionModule,
     TypeOrmModule.forFeature([
       RefreshTokenOrmEntity,
       PhoneOtpOrmEntity,
@@ -56,6 +59,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     RegisterUseCase,
     OnboardOrganisationService,
     ShopperAuthService,
+    WebsiteAuthService,
     ConversationClient,
     LogoutUseCase,
     LogoutAllUseCase,

@@ -5,6 +5,7 @@ import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
+import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import { User } from '../../users/domains/user.entity';
 
 describe('LoginUseCase', () => {
@@ -25,6 +26,7 @@ describe('LoginUseCase', () => {
 
     const userRepository: jest.Mocked<UserRepository> = {
       findByUsername: jest.fn(),
+      findByPhone: jest.fn(),
       findByEmail: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
@@ -73,12 +75,17 @@ describe('LoginUseCase', () => {
     };
     refreshTokenRepository.persist.mockResolvedValue(undefined);
 
+    const loginEventRepo = { save: jest.fn().mockResolvedValue(undefined) } as unknown as {
+      save: (entity: Partial<UserLoginEventOrmEntity>) => Promise<unknown>;
+    };
+
     const useCase = new LoginUseCase(
       userRepository,
       roleRepository,
       passwordHasher,
       tokenIssuer,
       refreshTokenRepository,
+      loginEventRepo as never,
     );
     return { useCase, userRepository, passwordHasher, tokenIssuer, refreshTokenRepository, user };
   };

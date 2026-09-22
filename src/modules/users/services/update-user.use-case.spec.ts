@@ -28,6 +28,7 @@ describe('UpdateUserUseCase', () => {
       update: jest.fn(),
       create: jest.fn(),
       findByUsername: jest.fn(),
+      findByPhone: jest.fn(),
       findByEmail: jest.fn(),
       list: jest.fn(),
       delete: jest.fn(),

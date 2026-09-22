@@ -8,6 +8,28 @@ import { RolesModule } from './modules/roles/roles.module';
 import { RoleRequestsModule } from './modules/role-requests/role-requests.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { LocationsModule } from './modules/locations/locations.module';
+import { ProvisionModule } from './modules/provision/provision.module';
+
+// Named connections used by the provisioner to reach the rxsoft backend and
+// emr databases (same PostgreSQL instance as identity in dev). Mandatory:
+// provisioning fails fast at boot when either is unreachable. Raw SQL only —
+// no entities are mapped on these connections.
+const provisionedConnection = (envPrefix: string, defaultDb: string) =>
+  TypeOrmModule.forRootAsync({
+    name: envPrefix.toLowerCase(),
+    inject: [ConfigService],
+    useFactory: (config: ConfigService): TypeOrmModuleOptions => ({
+      type: 'postgres',
+      host: config.get<string>(`${envPrefix}_DB_HOST`, 'localhost'),
+      port: Number(config.get<string>(`${envPrefix}_DB_PORT`, '5432')),
+      username: config.get<string>(`${envPrefix}_DB_USER`, 'postgres'),
+      password: config.get<string>(`${envPrefix}_DB_PASSWORD`, 'postgres'),
+      database: config.get<string>(`${envPrefix}_DB_NAME`, defaultDb),
+      entities: [],
+      synchronize: false,
+      logging: config.get<string>('TYPEORM_LOGGING', 'false') === 'true',
+    }),
+  });
 
 @Module({
   imports: [
@@ -30,12 +52,15 @@ import { LocationsModule } from './modules/locations/locations.module';
         } as TypeOrmModuleOptions;
       },
     }),
+    provisionedConnection('BACKEND', 'rxsoft'),
+    provisionedConnection('EMR', 'emr'),
     AuthModule,
     UsersModule,
     RolesModule,
     RoleRequestsModule,
     OrganizationsModule,
     LocationsModule,
+    ProvisionModule,
   ],
 })
 export class AppModule {}

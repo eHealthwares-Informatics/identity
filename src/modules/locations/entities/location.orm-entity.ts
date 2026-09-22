@@ -1,6 +1,9 @@
-import { Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 
+// Location codes are scoped per organisation (HQ/STORE repeat across orgs);
+// uniqueness is enforced on (organization_id, code), not globally.
 @Entity('locations')
+@Unique('uq_locations_org_code', ['organizationId', 'code'])
 export class LocationOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -8,7 +11,7 @@ export class LocationOrmEntity {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId!: string;
 
-  @Column({ type: 'text', unique: true })
+  @Column({ type: 'text' })
   code!: string;
 
   @Column({ type: 'text' })

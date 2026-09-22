@@ -38,45 +38,49 @@ export class LoginUseCase {
     const user = identifier.includes('@')
       ? await this.userRepository.findByEmail(identifier.toLowerCase())
       : await this.userRepository.findByUsername(identifier);
-    if (!user || !user.isActive) {
+
+    // Phone-number fallback: shoppers sign in with the phone they registered
+    // with (or received an OTP on). Password must still match.
+    const resolved = user ?? (await this.userRepository.findByPhone(identifier));
+    if (!resolved || !resolved.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isValid = await this.passwordHasher.verify(payload.password, user.passwordHash);
+    const isValid = await this.passwordHasher.verify(payload.password, resolved.passwordHash);
     if (!isValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const roles = user.organizationId
-      ? await this.roleRepository.listByCodes(user.roleCodes, user.organizationId)
+    const roles = resolved.organizationId
+      ? await this.roleRepository.listByCodes(resolved.roleCodes, resolved.organizationId)
       : [];
     const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
 
     const tokenPair = await this.tokenIssuer.issuePair(
       {
-        sub: user.id,
-        organizationId: user.organizationId ?? '',
-        locationId: user.locationId,
-        username: user.username,
-        roles: user.roleCodes,
+        sub: resolved.id,
+        organizationId: resolved.organizationId ?? '',
+        locationId: resolved.locationId,
+        username: resolved.username,
+        roles: resolved.roleCodes,
         permissions,
-        phone: user.phone,
-        email: user.email ?? user.id,
+        phone: resolved.phone,
+        email: resolved.email ?? resolved.id,
       },
-      user.loginTimeoutMinutes ?? undefined,
+      resolved.loginTimeoutMinutes ?? undefined,
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);
     await this.refreshTokenRepository.persist(
-      user.id,
+      resolved.id,
       refreshTokenHash,
       new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
     );
 
     await this.loginEventRepo.save({
-      userId: user.id,
+      userId: resolved.id,
       eventType: 'login',
-      organizationId: user.organizationId ?? null,
+      organizationId: resolved.organizationId ?? null,
     });
 
     return tokenPair;

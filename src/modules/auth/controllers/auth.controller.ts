@@ -16,6 +16,12 @@ import { RegisterUseCase } from '../services/register.use-case';
 import { OnboardOrganisationService } from '../services/onboard-organisation.service';
 import { ShopperAuthService } from '../services/shopper-auth.service';
 import { ShopperRequestOtpDto, ShopperVerifyOtpDto } from '../dto/shopper.dto';
+import {
+  WebsiteOAuthDto,
+  WebsiteRequestOtpDto,
+  WebsiteVerifyOtpDto,
+} from '../dto/website-auth.dto';
+import { WebsiteAuthService } from '../services/website-auth.service';
 import { OnboardOrganisationDto } from '../dto/onboard-organisation.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -41,6 +47,7 @@ export class AuthController {
     private readonly registerUseCase: RegisterUseCase,
     private readonly onboardOrganisationService: OnboardOrganisationService,
     private readonly shopperAuthService: ShopperAuthService,
+    private readonly websiteAuthService: WebsiteAuthService,
     private readonly logoutUseCase: LogoutUseCase,
     private readonly logoutAllUseCase: LogoutAllUseCase,
     @InjectRepository(UserLoginEventOrmEntity)
@@ -95,6 +102,40 @@ export class AuthController {
   @ApiOperation({ summary: 'Sign in a mobile shopper by phone (OTP verified client-side)' })
   shopperVerifyOtp(@Body() payload: ShopperVerifyOtpDto): Promise<AuthResponseDto> {
     return this.shopperAuthService.signIn(payload.phone);
+  }
+
+  // ── Website (damorex) sign-in: OTP + OAuth ───────────────────
+
+  @Public()
+  @Post('website/request-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send an OTP to a website shopper phone (sms/whatsapp)' })
+  websiteRequestOtp(@Body() payload: WebsiteRequestOtpDto) {
+    return this.websiteAuthService.requestOtp(payload.phone, payload.channel ?? 'sms');
+  }
+
+  @Public()
+  @Post('website/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify the OTP server-side and sign in by phone' })
+  websiteVerifyOtp(@Body() payload: WebsiteVerifyOtpDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.verifyOtpAndSignIn(payload.phone, payload.code);
+  }
+
+  @Public()
+  @Post('website/google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign in with a Google access token (verified server-side)' })
+  websiteGoogle(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.googleSignIn(payload.accessToken);
+  }
+
+  @Public()
+  @Post('website/facebook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign in with a Facebook access token (verified server-side)' })
+  websiteFacebook(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.facebookSignIn(payload.accessToken);
   }
 
   @Public()
