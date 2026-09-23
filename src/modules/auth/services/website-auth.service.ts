@@ -130,12 +130,13 @@ export class WebsiteAuthService {
       channel === 'whatsapp' ? 'WHATSAPP_EHEALTHWARES' : 'SMS_PROXY',
     );
     try {
-      const response = await fetch(`${conversationUrl}/channels/send`, {
+      // Conversation engine API: POST /channels/send-message { code, phone, title, message }
+      const response = await fetch(`${conversationUrl}/channels/send-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          channelCode,
-          recipient: phone,
+          code: channelCode,
+          phone,
           title: 'Damorex verification',
           message: `Your Damorex verification code is ${code}. It expires in 10 minutes.`,
         }),
