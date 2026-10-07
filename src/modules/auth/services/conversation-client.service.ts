@@ -24,9 +24,30 @@ export class ConversationClient {
     message: string,
     options?: { templateName?: string; components?: unknown[] },
   ): Promise<void> {
+    await this.post({ code, phone, title, message }, options);
+  }
+
+  /**
+   * Send a transactional email (e.g. a password-reset or verification link)
+   * through the channel selected by `code`. Same channel API as [send], but
+   * addressed by email instead of phone.
+   */
+  async sendEmail(
+    code: string,
+    email: string,
+    title: string,
+    message: string,
+  ): Promise<void> {
+    await this.post({ code, email, title, message });
+  }
+
+  private async post(
+    recipient: { code: string; phone?: string; email?: string; title: string; message: string },
+    options?: { templateName?: string; components?: unknown[] },
+  ): Promise<void> {
     const url = `${this.baseUrl()}/channels/send-message`;
     try {
-      const payload: Record<string, unknown> = { code, phone, title, message };
+      const payload: Record<string, unknown> = { ...recipient };
       if (options?.templateName) payload.templateName = options.templateName;
       if (options?.components) payload.components = options.components;
       const res = await fetch(url, {
@@ -40,9 +61,9 @@ export class ConversationClient {
       }
     } catch (error: any) {
       this.logger.error(
-        `Failed to send ${code} message to ${phone}: ${error.message}`,
+        `Failed to send ${recipient.code} message to ${recipient.phone ?? recipient.email}: ${error.message}`,
       );
-      throw new BadRequestException('Could not send verification code');
+      throw new BadRequestException('Could not send message');
     }
   }
 }

@@ -10,6 +10,7 @@ import { RegisterUseCase } from './services/register.use-case';
 import { OnboardOrganisationService } from './services/onboard-organisation.service';
 import { ShopperAuthService } from './services/shopper-auth.service';
 import { WebsiteAuthService } from './services/website-auth.service';
+import { WebsiteAccountService } from './services/website-account.service';
 import { ConversationClient } from './services/conversation-client.service';
 import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
@@ -19,6 +20,7 @@ import { TypeormRoleRepository } from '../roles/repositories/typeorm-role.reposi
 import { TypeormLocationRepository } from '../locations/repositories/typeorm-location.repository';
 import { RefreshTokenOrmEntity } from './entities/refresh-token.orm-entity';
 import { PhoneOtpOrmEntity } from './entities/phone-otp.orm-entity';
+import { AuthActionTokenOrmEntity } from './entities/auth-action-token.orm-entity';
 import { UserLoginEventOrmEntity } from './entities/user-login-event.orm-entity';
 import { UserOrmEntity } from '../users/entities/user.orm-entity';
 import { RoleOrmEntity } from '../roles/entities/role.orm-entity';
@@ -44,6 +46,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     TypeOrmModule.forFeature([
       RefreshTokenOrmEntity,
       PhoneOtpOrmEntity,
+      AuthActionTokenOrmEntity,
       UserLoginEventOrmEntity,
       UserOrmEntity,
       RoleOrmEntity,
@@ -60,6 +63,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     OnboardOrganisationService,
     ShopperAuthService,
     WebsiteAuthService,
+    WebsiteAccountService,
     ConversationClient,
     LogoutUseCase,
     LogoutAllUseCase,
