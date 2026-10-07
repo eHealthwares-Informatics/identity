@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
@@ -17,11 +27,16 @@ import { OnboardOrganisationService } from '../services/onboard-organisation.ser
 import { ShopperAuthService } from '../services/shopper-auth.service';
 import { ShopperRequestOtpDto, ShopperVerifyOtpDto } from '../dto/shopper.dto';
 import {
+  WebsiteForgotPasswordDto,
   WebsiteOAuthDto,
+  WebsiteRequestEmailVerificationDto,
   WebsiteRequestOtpDto,
+  WebsiteResetPasswordDto,
+  WebsiteVerifyEmailDto,
   WebsiteVerifyOtpDto,
 } from '../dto/website-auth.dto';
 import { WebsiteAuthService } from '../services/website-auth.service';
+import { WebsiteAccountService } from '../services/website-account.service';
 import { OnboardOrganisationDto } from '../dto/onboard-organisation.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -48,6 +63,7 @@ export class AuthController {
     private readonly onboardOrganisationService: OnboardOrganisationService,
     private readonly shopperAuthService: ShopperAuthService,
     private readonly websiteAuthService: WebsiteAuthService,
+    private readonly websiteAccountService: WebsiteAccountService,
     private readonly logoutUseCase: LogoutUseCase,
     private readonly logoutAllUseCase: LogoutAllUseCase,
     @InjectRepository(UserLoginEventOrmEntity)
@@ -125,8 +141,17 @@ export class AuthController {
   @Public()
   @Post('website/google')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Sign in with a Google access token (verified server-side)' })
+  @ApiOperation({
+    summary:
+      'Sign in with a Google access token or ID token (verified server-side)',
+  })
   websiteGoogle(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    if (payload.idToken) {
+      return this.websiteAuthService.googleSignInWithIdToken(payload.idToken);
+    }
+    if (!payload.accessToken) {
+      throw new BadRequestException('Provide a Google accessToken or idToken');
+    }
     return this.websiteAuthService.googleSignIn(payload.accessToken);
   }
 
@@ -135,7 +160,39 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Sign in with a Facebook access token (verified server-side)' })
   websiteFacebook(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
-    return this.websiteAuthService.facebookSignIn(payload.accessToken);
+    return this.websiteAuthService.facebookSignIn(payload.accessToken ?? '');
+  }
+
+  @Public()
+  @Post('website/forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Email a password-reset link to a website shopper' })
+  websiteForgotPassword(@Body() payload: WebsiteForgotPasswordDto) {
+    return this.websiteAccountService.requestPasswordReset(payload.email);
+  }
+
+  @Public()
+  @Post('website/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset a website shopper password with a reset token' })
+  websiteResetPassword(@Body() payload: WebsiteResetPasswordDto) {
+    return this.websiteAccountService.resetPassword(payload.token, payload.password);
+  }
+
+  @Public()
+  @Post('website/request-email-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Email a verification link to a website shopper' })
+  websiteRequestEmailVerification(@Body() payload: WebsiteRequestEmailVerificationDto) {
+    return this.websiteAccountService.requestEmailVerification(payload.email);
+  }
+
+  @Public()
+  @Post('website/verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify a website shopper email with a verification token' })
+  websiteVerifyEmail(@Body() payload: WebsiteVerifyEmailDto) {
+    return this.websiteAccountService.verifyEmail(payload.token);
   }
 
   @Public()

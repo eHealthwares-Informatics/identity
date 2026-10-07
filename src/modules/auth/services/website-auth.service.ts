@@ -204,6 +204,87 @@ export class WebsiteAuthService {
     });
   }
 
+  /**
+   * Sign in (or auto-register) via a verified Google ID token — the credential
+   * issued by Android Credential Manager / One Tap when the app signs in with
+   * Google. The JWT is verified against Google's tokeninfo endpoint and its
+   * audience must match our web OAuth client (GOOGLE_WEB_CLIENT_ID).
+   */
+  async googleSignInWithIdToken(idToken: string): Promise<TokenPair> {
+    const info = await this.verifyGoogleIdToken(idToken);
+    return this.oauthSignIn({
+      provider: 'google',
+      providerUserId: info.sub,
+      email: info.email ?? null,
+      name: info.name ?? null,
+    });
+  }
+
+  /** Web OAuth client the app sets as Credential Manager `serverClientId`. */
+  private googleWebClientId(): string {
+    return this.configService.get<string>(
+      'GOOGLE_WEB_CLIENT_ID',
+      '763036387173-jml5o3iauj2ms5269dqf7qq24gplh6mq.apps.googleusercontent.com',
+    );
+  }
+
+  /**
+   * Verify a Google ID token (JWS) and return its principal claims. Uses
+   * Google's public tokeninfo endpoint (signature validated server-side by
+   * Google); we enforce audience, issuer, expiry and verified email here.
+   */
+  private async verifyGoogleIdToken(
+    idToken: string,
+  ): Promise<{ sub: string; email?: string; name?: string }> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+      );
+    } catch (error) {
+      this.logger.warn(`Google tokeninfo request failed: ${String(error)}`);
+      throw new UnauthorizedException('Could not verify Google account');
+    }
+    if (!response.ok) {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+    const data = (await response.json()) as Record<string, unknown>;
+
+    const aud = Array.isArray(data.aud) ? data.aud : [data.aud];
+    if (!aud.includes(this.googleWebClientId())) {
+      throw new UnauthorizedException(
+        'Google token was issued for a different app',
+      );
+    }
+    if (
+      data.iss !== 'accounts.google.com' &&
+      data.iss !== 'https://accounts.google.com'
+    ) {
+      throw new UnauthorizedException('Invalid Google token issuer');
+    }
+    const exp = Number(data.exp);
+    if (!Number.isFinite(exp) || exp * 1000 < Date.now()) {
+      throw new UnauthorizedException('Google token has expired');
+    }
+    const sub =
+      typeof data.sub === 'string'
+        ? data.sub
+        : typeof data.user_id === 'string'
+          ? data.user_id
+          : undefined;
+    if (!sub) {
+      throw new UnauthorizedException('Google account has no identifier');
+    }
+    // Only link accounts by email when Google says the address is verified.
+    const email =
+      typeof data.email === 'string' &&
+      (data.email_verified === true || data.email_verified === 'true')
+        ? data.email
+        : undefined;
+    const name = typeof data.name === 'string' ? data.name : undefined;
+    return { sub, email, name };
+  }
+
   /** Sign in (or auto-register) via a verified Facebook identity. */
   async facebookSignIn(accessToken: string): Promise<TokenPair> {
     const info = await this.fetchFacebookUserInfo(accessToken);

@@ -28,6 +28,9 @@ export class UserOrmEntity {
   @Column({ type: 'text', nullable: true })
   email?: string;
 
+  @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
+  emailVerifiedAt?: Date | null;
+
   @Column({ name: 'login_timeout_minutes', type: 'integer', nullable: true })
   loginTimeoutMinutes!: number | null;
 
