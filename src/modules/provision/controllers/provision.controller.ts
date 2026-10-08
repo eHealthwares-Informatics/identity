@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Post,
 } from '@nestjs/common';
@@ -22,6 +23,8 @@ import { ProvisionOrganisationDto } from '../dto/provision-organisation.dto';
 @ApiTags('provision')
 @Controller('provision')
 export class ProvisionController {
+  private readonly logger = new Logger(ProvisionController.name);
+
   constructor(
     private readonly provisionService: ProvisionService,
     private readonly config: ConfigService,
@@ -63,10 +66,26 @@ export class ProvisionController {
   }
 
   // DELETE /provision/:code — tear down the organisation (idempotent).
+  // The body carries per-table results, so a partial cleanup is visible to the
+  // caller instead of a bare `deprovisioned: true` (identity#2). The headline
+  // boolean is true only when every table was emptied.
   @Delete(':code')
   async deprovision(@Param('code') code: string) {
     this.assertEnabled();
-    const removed = await this.provisionService.deprovision(code);
-    return { deprovisioned: removed };
+    const outcome = await this.provisionService.deprovision(code);
+    if (outcome.status === 'partial') {
+      this.logger.warn(
+        `[deprovision:${code.toUpperCase()}] partial cleanup — ` +
+          outcome.failures.map((f) => `${f.name}: ${f.error ?? f.outcome}`).join('; '),
+      );
+    }
+    return {
+      deprovisioned: outcome.deprovisioned,
+      status: outcome.status,
+      deleted: outcome.deleted,
+      failures: outcome.failures,
+      tables: outcome.tables,
+      budgetExhausted: outcome.budgetExhausted,
+    };
   }
 }

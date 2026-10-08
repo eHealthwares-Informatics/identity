@@ -1,3 +1,5 @@
+import type { CleanupResult } from './services/deprovision-cleanup';
+
 export interface ProvisionedUser {
   username: string;
   password: string;
@@ -32,4 +34,16 @@ export interface ProvisionStatus {
   exists: boolean;
   code: string;
   organizationId: string | null;
+}
+
+// Result of a teardown. `deprovisioned` is only true when every table was
+// emptied — partial cleanup reports `partial` and lists what failed, so a
+// blocked DELETE can never look like success (identity#2 / seed#13).
+export interface DeprovisionOutcome {
+  status: 'deprovisioned' | 'partial' | 'not_found';
+  deprovisioned: boolean;
+  deleted: number;
+  tables: CleanupResult[];
+  failures: CleanupResult[];
+  budgetExhausted: boolean;
 }

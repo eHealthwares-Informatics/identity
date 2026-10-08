@@ -5,7 +5,15 @@ export class RefreshTokenOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne('UserOrmEntity', 'refreshTokens', { nullable: false })
+  // ON DELETE CASCADE: a refresh token is worthless without its user, and the
+  // FK previously had NO ACTION, so `DELETE FROM users` failed (and — in the
+  // old, error-swallowing deprovision path — left exactly 4 orphaned users per
+  // provisioned organisation, identity#2). The deprovision path also deletes
+  // the tokens explicitly, so this is defence in depth for every other caller.
+  @ManyToOne('UserOrmEntity', 'refreshTokens', {
+    nullable: false,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_id' })
   user!: any;
 
