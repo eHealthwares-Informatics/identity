@@ -22,11 +22,18 @@ import {
 } from '../org-template';
 import { ProvisionOrganisationDto } from '../dto/provision-organisation.dto';
 import {
+  DeprovisionOutcome,
   ProvisionResult,
   ProvisionedUser,
   ProvisionStatus,
 } from '../provision-result';
 import { RawUpsertTarget } from './raw-upsert.target';
+import {
+  CleanupResult,
+  CleanupStep,
+  DeprovisionCleaner,
+  cleanupOptionsFromEnv,
+} from './deprovision-cleanup';
 import { PASSWORD_HASHER } from '../../auth/services/identity.di-tokens';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 
@@ -594,88 +601,163 @@ export class ProvisionService {
   }
 
   // Hard teardown of an organisation and everything provisioned for it.
-  // Idempotent: when the org doesn't exist, returns false without error.
-  async deprovision(code: string): Promise<boolean> {
+  // Idempotent: when the org doesn't exist, reports `not_found` without error.
+  //
+  // Every table is deleted in dependency order (children before the rows they
+  // reference), bounded by lock/statement timeouts and a wall-clock budget, and
+  // the result is truthful: `deprovisioned: true` only when every table was
+  // emptied. The old loop swallowed each failure into `could not clean <table>`
+  // (frequently with an EMPTY message) and then reported success, which is how
+  // orgs kept exactly 4 orphaned users each: `DELETE FROM users` is blocked by
+  // refresh_tokens.user_id (NO ACTION FK) and by auth_action_tokens /
+  // user_login_events / role_requests on schemas where those columns carry FKs,
+  // while roles/locations/organizations were still removed around it.
+  async deprovision(code: string): Promise<DeprovisionOutcome> {
     const orgCode = code.toUpperCase();
     const org = await this.organizationRepository.findOne({
       where: { code: orgCode },
       withDeleted: true,
     });
     if (!org) {
-      return false;
+      return {
+        status: 'not_found',
+        deprovisioned: false,
+        deleted: 0,
+        tables: [],
+        failures: [],
+        budgetExhausted: false,
+      };
     }
-    const orgId = org.id;
+    const startedAt = Date.now();
+    const identityDb = this.defaultDb();
+    const cleaner = new DeprovisionCleaner(
+      cleanupOptionsFromEnv(),
+      (message) => this.logger.warn(message),
+    );
 
-    const identityDeps: Array<[string, string]> = [
-      ['refresh_tokens', 'user_id IN (SELECT id FROM users WHERE organization_id = $1)'],
-      ['user_login_events', 'user_id IN (SELECT id FROM users WHERE organization_id = $1)'],
-      ['user_roles', 'user_id IN (SELECT id FROM users WHERE organization_id = $1)'],
-      ['role_permissions', 'role_id IN (SELECT id FROM roles WHERE organization_id = $1)'],
-      ['users', 'organization_id = $1'],
-      ['roles', 'organization_id = $1'],
-      ['locations', 'organization_id = $1'],
+    // ── identity: user-scoped rows first ──────────────────────────────────
+    // refresh_tokens.user_id has NO ON DELETE CASCADE, so the tokens must go
+    // before the users that own them; the same holds for auth_action_tokens,
+    // user_login_events, role_requests and user_roles on schemas that enforce
+    // those FKs. role_permissions/user_roles precede the roles they reference.
+    const userScoped = 'user_id IN (SELECT id FROM users WHERE organization_id = $1)';
+    const identityTable = (table: string, where: string): CleanupStep => ({
+      dataSource: identityDb,
+      name: `identity.${table}`,
+      table,
+      where,
+    });
+    const identitySteps: CleanupStep[] = [
+      identityTable('refresh_tokens', userScoped),
+      identityTable('auth_action_tokens', userScoped),
+      identityTable('user_login_events', userScoped),
+      identityTable('role_requests', userScoped),
+      identityTable('user_roles', userScoped),
+      identityTable(
+        'role_permissions',
+        'role_id IN (SELECT id FROM roles WHERE organization_id = $1)',
+      ),
+      identityTable('users', 'organization_id = $1'),
+      identityTable('roles', 'organization_id = $1'),
+      identityTable('locations', 'organization_id = $1'),
     ];
-    for (const [table, where] of identityDeps) {
+    const identityResults = await cleaner.run(identitySteps, org.id);
+    const identityFailures = identityResults.filter((r) => r.outcome !== 'cleaned');
+    const orgRowFailures: CleanupResult[] = [];
+    if (identityFailures.length === 0) {
+      // The organizations row is the retry marker: keep it while its own
+      // children survive, so the next deprovision finishes the job instead of
+      // orphaning users/roles that already lost their organisation.
       try {
-        await this.defaultDb().query(`DELETE FROM "${table}" WHERE ${where}`, [org.id]);
+        await identityDb.query('DELETE FROM "organizations" WHERE id = $1', [org.id]);
       } catch (err: any) {
-        this.logger.warn(
-          `[deprovision:${orgCode}] could not clean ${table}: ${err.message}`,
-        );
+        orgRowFailures.push({
+          name: 'identity.organizations',
+          table: 'organizations',
+          outcome: 'failed',
+          deleted: 0,
+          attempts: 1,
+          error: err?.message ? String(err.message) : 'could not delete organizations row',
+          code: err?.code,
+        });
       }
+    } else {
+      this.logger.error(
+        `[deprovision:${orgCode}] identity cleanup incomplete ` +
+          `(${identityFailures.map((f) => `${f.name}: ${f.error}`).join('; ')}) — ` +
+          'keeping the organizations row for a retry',
+      );
     }
-    await this.defaultDb().query('DELETE FROM "organizations" WHERE id = $1', [org.id]);
 
-    const backendTables: string[] = [
-      'user_pos_configs',
-      'stock_balances',
-      'store_stock_locations',
-      'stock_lots',
-      'price_lists',
-      'organisation_configs',
-      'organisation_payment_providers',
-      'organisation_items',
-      'stock_locations',
-      'warehouses',
-      'parties',
+    // ── backend: children before the rows they reference ──────────────────
+    const orgScoped = 'organization_id = $1';
+    const backendTables: Array<[string, string]> = [
+      ['user_pos_configs', orgScoped],
+      [
+        'price_list_items',
+        'price_list_id IN (SELECT id FROM "price_lists" WHERE organization_id = $1)',
+      ],
+      ['stock_balances', orgScoped],
+      ['store_stock_locations', orgScoped],
+      ['stock_lots', orgScoped],
+      ['price_lists', orgScoped],
+      ['organisation_payment_providers', orgScoped],
+      ['organisation_configs', orgScoped],
+      ['organisation_items', orgScoped],
+      ['stock_locations', orgScoped],
+      ['warehouses', orgScoped],
+      ['parties', orgScoped],
     ];
-    for (const table of backendTables) {
-      try {
-        await this.backendDb.query(
-          `DELETE FROM "${table}" WHERE organization_id = $1`,
-          [org.id],
-        );
-      } catch (err: any) {
-        this.logger.warn(
-          `[deprovision:${orgCode}] could not clean ${table}: ${err.message}`,
-        );
-      }
-    }
-    // price_list_items has no org column — clean via the org's price lists.
-    try {
-      await this.backendDb.query(
-        `DELETE FROM "price_list_items" WHERE price_list_id IN
-         (SELECT id FROM "price_lists" WHERE organization_id = $1)`,
-        [org.id],
-      );
-    } catch (err: any) {
-      this.logger.warn(
-        `[deprovision:${orgCode}] could not clean price_list_items: ${err.message}`,
-      );
-    }
+    const backendResults = await cleaner.run(
+      backendTables.map(([table, where]) => ({
+        dataSource: this.backendDb,
+        name: `backend.${table}`,
+        table,
+        where,
+      })),
+      org.id,
+    );
 
-    try {
-      await this.emrDb.query('DELETE FROM "departments" WHERE organization_id = $1', [
-        org.id,
-      ]);
-    } catch (err: any) {
-      this.logger.warn(
-        `[deprovision:${orgCode}] could not clean departments: ${err.message}`,
+    // ── emr: departments per HQ site ──────────────────────────────────────
+    const emrResults = await cleaner.run(
+      [
+        {
+          dataSource: this.emrDb,
+          name: 'emr.departments',
+          table: 'departments',
+          where: orgScoped,
+        },
+      ],
+      org.id,
+    );
+
+    const tables = [...identityResults, ...backendResults, ...emrResults];
+    const failures = [
+      ...orgRowFailures,
+      ...tables.filter((r) => r.outcome !== 'cleaned'),
+    ];
+    const deprovisioned = failures.length === 0;
+    const durationMs = Date.now() - startedAt;
+    const outcome: DeprovisionOutcome = {
+      status: deprovisioned ? 'deprovisioned' : 'partial',
+      deprovisioned,
+      deleted: tables.reduce((sum, r) => sum + (r.deleted || 0), 0),
+      tables,
+      failures,
+      budgetExhausted: cleaner.budgetExhausted,
+    };
+
+    if (deprovisioned) {
+      this.logger.log(
+        `Deprovisioned ${orgCode} [${org.id}] — ${outcome.deleted} rows in ${durationMs}ms`,
+      );
+    } else {
+      this.logger.error(
+        `[deprovision:${orgCode}] PARTIAL (${durationMs}ms, ${outcome.deleted} rows deleted): ` +
+          failures.map((f) => `${f.name}=${f.outcome}: ${f.error}`).join('; '),
       );
     }
-
-    this.logger.log(`Deprovisioned ${orgCode} [${org.id}]`);
-    return true;
+    return outcome;
   }
 
   async status(code: string): Promise<ProvisionStatus> {
