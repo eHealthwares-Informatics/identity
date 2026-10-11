@@ -5,6 +5,7 @@ import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
 import { User } from '../domains/user.entity';
+import type { Role } from '../../roles/domains/role.entity';
 import { PASSWORD_HASHER, ROLE_REPOSITORY, USER_REPOSITORY } from '../../auth/services/identity.di-tokens';
 
 @Injectable()
@@ -34,8 +35,9 @@ export class CreateUserUseCase {
     }
 
     const roleCodes = payload.roleCodes ?? ['cashier'];
+    let roles: Role[] = [];
     if (organizationId) {
-      const roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
+      roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
       if (roles.length !== roleCodes.length) {
         throw new BadRequestException('One or more roles are invalid');
       }
@@ -50,7 +52,7 @@ export class CreateUserUseCase {
       passwordHash,
       true,
       roleCodes,
-      [],
+      roles,
       payload.phone,
       payload.email,
       payload.loginTimeoutMinutes ?? null,

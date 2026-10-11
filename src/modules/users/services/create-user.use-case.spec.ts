@@ -65,6 +65,31 @@ describe('CreateUserUseCase', () => {
     expect(created.roleCodes).toEqual(['cashier']);
   });
 
+  it('persists the resolved role entities so user_roles rows are written', async () => {
+    const { useCase, userRepository, roleRepository } = createUseCase();
+    await useCase.execute(
+      { username: 'jane', password: 'secret', roleCodes: ['admin'] },
+      'org-1',
+    );
+
+    expect(roleRepository.listByCodes).toHaveBeenCalledWith(['admin'], 'org-1');
+    const created = userRepository.create.mock.calls[0][0] as User;
+    // Regression guard: resolved roles used to be discarded (scoped inside the
+    // validation if-block) and users were created with no user_roles rows.
+    expect(created.roles).toHaveLength(1);
+    expect((created.roles[0] as Role).id).toBe('admin');
+  });
+
+  it('keeps roles empty when no organization is provided', async () => {
+    const { useCase, userRepository, roleRepository } = createUseCase();
+    await useCase.execute({ username: 'global', password: 'secret' }, null);
+
+    expect(roleRepository.listByCodes).not.toHaveBeenCalled();
+    const created = userRepository.create.mock.calls[0][0] as User;
+    expect(created.roleCodes).toEqual(['cashier']);
+    expect(created.roles).toEqual([]);
+  });
+
   it('throws BadRequestException for a duplicate username', async () => {
     const { useCase, userRepository } = createUseCase();
     userRepository.findByUsername.mockResolvedValueOnce({ id: 'x' } as never);
