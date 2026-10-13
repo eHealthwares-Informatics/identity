@@ -9,7 +9,7 @@ export class ListUsersUseCase {
     private readonly userRepository: UserRepository,
   ) {}
 
-  async execute(offset: number, limit: number, organizationId: string) {
-    return this.userRepository.list(offset, limit, organizationId);
+  async execute(offset: number, limit: number, organizationId: string, search?: string) {
+    return this.userRepository.list(offset, limit, organizationId, search);
   }
 }

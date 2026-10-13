@@ -43,16 +43,28 @@ export class RolesController {
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'List all roles' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Page number (1-based)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20, description: 'Items per page' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 100, description: 'Items per page' })
   @ApiQuery({ name: 'search', required: false, type: String, example: 'admin', description: 'Search by role code or name' })
   async list(
     @Query('page') page = 1,
-    @Query('limit') limit = 20,
+    // Default is generous so unpaginated callers (the roles async-select in the
+    // user create/edit modal) still receive every role; the admin table always
+    // sends an explicit limit and paginates normally.
+    @Query('limit') limit = 100,
     @Query('search') search: string | undefined,
     @CurrentUser() currentUser: RequestUser,
-  ): Promise<RoleResponseDto[]> {
-    const roles = await this.listRolesUseCase.execute(currentUser.organizationId ?? '');
-    return roles.map(toResponse);
+  ): Promise<{ data: RoleResponseDto[]; meta: { page: number; limit: number; total: number } }> {
+    const offset = (page - 1) * limit;
+    const result = await this.listRolesUseCase.list({
+      organizationId: currentUser.organizationId ?? '',
+      offset,
+      limit,
+      search,
+    });
+    return {
+      data: result.items.map(toResponse),
+      meta: { page, limit, total: result.total },
+    };
   }
 
   @Get('catalog')

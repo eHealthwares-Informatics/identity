@@ -8,5 +8,5 @@ export interface UserRepository {
   create(user: User): Promise<User>;
   update(user: User, organizationId?: string | null): Promise<User>;
   delete(id: string, organizationId: string): Promise<void>;
-  list(offset: number, limit: number, organizationId: string): Promise<{ items: User[]; total: number }>;
+  list(offset: number, limit: number, organizationId: string, search?: string): Promise<{ items: User[]; total: number }>;
 }

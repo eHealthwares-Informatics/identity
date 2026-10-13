@@ -1,7 +1,7 @@
 import { InjectRepository } from '@nestjs/typeorm';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { In, Repository } from 'typeorm';
-import { RoleRepository } from './role.repository';
+import { Brackets, In, Repository } from 'typeorm';
+import { RoleListQuery, RoleRepository } from './role.repository';
 import { Role } from '../domains/role.entity';
 import { RoleOrmEntity } from '../entities/role.orm-entity';
 import { PermissionOrmEntity } from '../entities/permission.orm-entity';
@@ -57,6 +57,36 @@ export class TypeormRoleRepository implements RoleRepository {
       order: { code: 'ASC' },
     });
     return items.map(IdentityMapper.toDomainRole.bind(IdentityMapper));
+  }
+
+  async list(query: RoleListQuery): Promise<{ items: Role[]; total: number }> {
+    const qb = this.roleRepository
+      .createQueryBuilder('role')
+      .leftJoinAndSelect('role.permissions', 'permission')
+      .where('role.organizationId = :organizationId', {
+        organizationId: query.organizationId,
+      });
+
+    if (query.search) {
+      qb.andWhere(
+        new Brackets((where) => {
+          where.orWhere('role.code ILIKE :search', { search: `%${query.search}%` });
+          where.orWhere('role.name ILIKE :search', { search: `%${query.search}%` });
+          where.orWhere('role.description ILIKE :search', { search: `%${query.search}%` });
+        }),
+      );
+    }
+
+    const [items, total] = await qb
+      .orderBy('role.code', 'ASC')
+      .skip(query.offset)
+      .take(query.limit)
+      .getManyAndCount();
+
+    return {
+      items: items.map(IdentityMapper.toDomainRole.bind(IdentityMapper)),
+      total,
+    };
   }
 
   async create(role: Role): Promise<Role> {
