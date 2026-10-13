@@ -1,10 +1,18 @@
 import { Role } from '../domains/role.entity';
 
+export type RoleListQuery = {
+  organizationId: string;
+  offset: number;
+  limit: number;
+  search?: string;
+};
+
 export interface RoleRepository {
   findByCode(code: string, organizationId: string): Promise<Role | null>;
   findById(id: string, organizationId: string): Promise<Role | null>;
   listByCodes(codes: string[], organizationId: string): Promise<Role[]>;
   listAll(organizationId: string): Promise<Role[]>;
+  list(query: RoleListQuery): Promise<{ items: Role[]; total: number }>;
   create(role: Role): Promise<Role>;
   update(role: Role): Promise<Role>;
   delete(id: string, organizationId: string): Promise<void>;

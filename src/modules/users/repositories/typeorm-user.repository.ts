@@ -1,6 +1,6 @@
 import { InjectRepository } from '@nestjs/typeorm';
 import { Injectable } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { UserRepository } from './user.repository';
 import { User } from '../domains/user.entity';
 import { UserOrmEntity } from '../entities/user.orm-entity';
@@ -102,18 +102,36 @@ export class TypeormUserRepository implements UserRepository {
     }
   }
 
-  async list(offset: number, limit: number, organizationId: string): Promise<{ items: User[]; total: number }> {
-    const where: any = { isActive: true };
+  async list(
+    offset: number,
+    limit: number,
+    organizationId: string,
+    search?: string,
+  ): Promise<{ items: User[]; total: number }> {
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.roles', 'role')
+      .where('user.isActive = :isActive', { isActive: true });
+
     if (organizationId) {
-      where.organizationId = organizationId;
+      qb.andWhere('user.organizationId = :organizationId', { organizationId });
     }
-    const [items, total] = await this.userRepository.findAndCount({
-      relations: { roles: true },
-      where,
-      skip: offset,
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
+
+    if (search) {
+      qb.andWhere(
+        new Brackets((where) => {
+          where.orWhere('user.username ILIKE :search', { search: `%${search}%` });
+          where.orWhere('user.email ILIKE :search', { search: `%${search}%` });
+          where.orWhere('user.phone ILIKE :search', { search: `%${search}%` });
+        }),
+      );
+    }
+
+    const [items, total] = await qb
+      .orderBy('user.createdAt', 'DESC')
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
 
     return {
       items: items.map(IdentityMapper.toDomainUser.bind(IdentityMapper)),

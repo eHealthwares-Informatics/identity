@@ -72,7 +72,12 @@ export class UsersController {
     @CurrentUser() currentUser: RequestUser,
   ): Promise<UsersListResponse> {
     const offset = (page - 1) * limit;
-    const result = await this.listUsersUseCase.execute(offset, limit, currentUser.organizationId ?? '');
+    const result = await this.listUsersUseCase.execute(
+      offset,
+      limit,
+      currentUser.organizationId ?? '',
+      search,
+    );
     return {
       data: result.items.map(this.toResponse),
       meta: { page, limit, total: result.total },
