@@ -82,8 +82,9 @@ export class RolesController {
     return toResponse(role);
   }
 
+  // Role editing is superadmin-only (rxsoft#781) — non-superadmins get 403.
   @Put(':id')
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   @ApiOperation({ summary: 'Update a role' })
   async update(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
     const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
