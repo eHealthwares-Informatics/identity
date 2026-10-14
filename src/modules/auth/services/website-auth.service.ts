@@ -30,6 +30,14 @@ const MAX_REQUESTS_PER_HOUR = 5;
 const MAX_VERIFY_ATTEMPTS = 5;
 const WEBSITE_ROLE = 'website_user';
 
+/** OAuth sign-in channels. Each maps to its own org/role env overrides. */
+export type OAuthChannel = 'website' | 'console' | 'shopper' | 'emr';
+
+export type OAuthChannelConfig = {
+  organizationId: string;
+  roleCodes: string[];
+};
+
 export type OAuthProvider = 'google' | 'facebook';
 
 export type OAuthUserInfo = {
@@ -64,6 +72,29 @@ export class WebsiteAuthService {
       'SHOPPER_DEFAULT_ORGANIZATION_ID',
       DEFAULT_ORG_ID,
     );
+  }
+
+  /**
+   * Per-channel OAuth sign-in configuration. Channels map to env keys named
+   * `<CHANNEL>_OAUTH_ORGANIZATION_ID` and `<CHANNEL>_OAUTH_ROLES` (CSV);
+   * when unset the shopper defaults are used so existing website behaviour
+   * is unchanged.
+   */
+  /**
+   * Per-channel OAuth sign-in configuration. Channels map to env keys named
+   * `OAUTH_<CHANNEL>_ORGANIZATION_ID` and `OAUTH_<CHANNEL>_ROLES` (CSV);
+   * when unset the shopper defaults are used so existing website behaviour
+   * is unchanged.
+   */
+  private channelConfig(channel: OAuthChannel): OAuthChannelConfig {
+    const prefix = channel.toUpperCase();
+    const organizationId =
+      this.configService.get<string>(`OAUTH_${prefix}_ORGANIZATION_ID`) ||
+      this.organizationId();
+    const roleCsv =
+      this.configService.get<string>(`OAUTH_${prefix}_ROLES`) || WEBSITE_ROLE;
+    const roleCodes = roleCsv.split(',').map((c) => c.trim()).filter(Boolean);
+    return { organizationId, roleCodes };
   }
 
   private normalizePhone(phone: string): string {
@@ -285,6 +316,56 @@ export class WebsiteAuthService {
     return { sub, email, name };
   }
 
+  /**
+   * Sign in (or auto-register) via a verified Google identity for a specific
+   * consumer channel (website shoppers by default; consoles / mobile apps
+   * pass their own channel which may resolve a different org + role set).
+   * Existing accounts of ANY role are linked by verified email; first-time
+   * identities are auto-registered in the channel's configured org/role.
+   */
+  async oauthGoogleSignInForChannel(
+    payload: { accessToken?: string; idToken?: string },
+    channel: OAuthChannel,
+  ): Promise<TokenPair> {
+    if (!payload.idToken && !payload.accessToken) {
+      throw new BadRequestException('Provide a Google accessToken or idToken');
+    }
+    const info: { id?: string; sub?: string; email?: string; name?: string } =
+      payload.idToken
+        ? { id: undefined, ...(await this.verifyGoogleIdToken(payload.idToken)) }
+        : await this.fetchGoogleUserInfo(payload.accessToken as string);
+    const providerUserId = info.sub ?? info.id ?? '';
+    if (!providerUserId) {
+      throw new UnauthorizedException('Google account has no identifier');
+    }
+    return this.oauthSignIn(
+      {
+        provider: 'google',
+        providerUserId,
+        email: info.email ?? null,
+        name: info.name ?? null,
+      },
+      channel,
+    );
+  }
+
+  /** See oauthGoogleSignInForChannel — Facebook access-token variant. */
+  async oauthFacebookSignInForChannel(
+    accessToken: string,
+    channel: OAuthChannel,
+  ): Promise<TokenPair> {
+    const info = await this.fetchFacebookUserInfo(accessToken);
+    return this.oauthSignIn(
+      {
+        provider: 'facebook',
+        providerUserId: info.id,
+        email: info.email ?? null,
+        name: info.name ?? null,
+      },
+      channel,
+    );
+  }
+
   /** Sign in (or auto-register) via a verified Facebook identity. */
   async facebookSignIn(accessToken: string): Promise<TokenPair> {
     const info = await this.fetchFacebookUserInfo(accessToken);
@@ -355,10 +436,15 @@ export class WebsiteAuthService {
    * email, then the provider-linked username. Auto-registers when no account
    * exists yet. Tokens are issued exactly like a password login.
    */
-  private async oauthSignIn(info: OAuthUserInfo): Promise<TokenPair> {
-    const organizationId = this.organizationId();
+  private async oauthSignIn(
+    info: OAuthUserInfo,
+    channel: OAuthChannel = 'website',
+  ): Promise<TokenPair> {
+    const { organizationId, roleCodes: configuredRoles } =
+      this.channelConfig(channel);
 
     if (info.email) {
+      // Link any existing account role — the verified email is the key.
       const byEmail = await this.userRepository.findByEmail(
         info.email.toLowerCase(),
         organizationId,
@@ -373,13 +459,14 @@ export class WebsiteAuthService {
     );
     if (existing) return this.issueForUser(existing);
 
-    const roleCodes = [WEBSITE_ROLE];
     const roles = await this.roleRepository.listByCodes(
-      roleCodes,
+      configuredRoles,
       organizationId,
     );
-    if (roles.length !== roleCodes.length) {
-      throw new BadRequestException('Website user role not configured');
+    if (roles.length !== configuredRoles.length) {
+      throw new BadRequestException(
+        `OAuth role(s) not configured for channel ${channel}`,
+      );
     }
 
     const passwordHash = await this.passwordHasher.hash(randomUUID());
@@ -390,13 +477,13 @@ export class WebsiteAuthService {
       username,
       passwordHash,
       true,
-      roleCodes,
+      configuredRoles,
       roles,
       undefined,
       info.email ?? undefined,
     );
     await this.userRepository.create(user);
-    this.logger.log(`Created ${info.provider} website user ${username}`);
+    this.logger.log(`Created ${info.provider} user ${username} (${channel})`);
     return this.issueForUser(user);
   }
 
