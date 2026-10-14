@@ -9,6 +9,10 @@ import { UpdateRoleUseCase } from './services/update-role.use-case';
 import { DeleteRoleUseCase } from './services/delete-role.use-case';
 import { RoleOrmEntity } from './entities/role.orm-entity';
 import { PermissionOrmEntity } from './entities/permission.orm-entity';
+import {
+  PermissionCatalogBootstrap,
+  PermissionCatalogService,
+} from './services/permission-catalog.service';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -20,6 +24,9 @@ import { AuthModule } from '../auth/auth.module';
     GetRoleUseCase,
     UpdateRoleUseCase,
     DeleteRoleUseCase,
+    PermissionCatalogService,
+    PermissionCatalogBootstrap,
   ],
+  exports: [PermissionCatalogService],
 })
 export class RolesModule {}
