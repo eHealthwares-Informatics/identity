@@ -54,6 +54,7 @@ describe('UpdateUserUseCase', () => {
     const passwordHasher: jest.Mocked<PasswordHasherPort> = {
       hash: jest.fn(async (raw: string) => `hash:${raw}`),
       verify: jest.fn(),
+      needsRehash: jest.fn().mockReturnValue(false),
     };
     const refreshTokenRepository: jest.Mocked<RefreshTokenRepository> = {
       persist: jest.fn(),

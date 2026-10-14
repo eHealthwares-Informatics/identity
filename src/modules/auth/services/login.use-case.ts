@@ -52,6 +52,19 @@ export class LoginUseCase {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Upgrade a superseded digest (unsalted SHA-256) now that we hold the
+    // plaintext — this is the only moment it is available, so it is how existing
+    // accounts migrate without a forced reset (rxsoft-qa#142). Best-effort: a
+    // failed upgrade must never fail the login itself.
+    if (this.passwordHasher.needsRehash(resolved.passwordHash)) {
+      try {
+        const passwordHash = await this.passwordHasher.hash(payload.password);
+        await this.userRepository.update({ ...resolved, passwordHash });
+      } catch {
+        // Ignore — the account still signs in and upgrades on a later login.
+      }
+    }
+
     const roles = resolved.organizationId
       ? await this.roleRepository.listByCodes(resolved.roleCodes, resolved.organizationId)
       : [];
