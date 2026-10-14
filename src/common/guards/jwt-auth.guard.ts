@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -35,10 +41,16 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const token = authHeader.slice('Bearer '.length);
+    // SECURITY: no hardcoded secret fallback — a misconfigured deployment must
+    // fail loudly (500 with a clear message) instead of silently verifying
+    // tokens with a well-known default. JWT_ACCESS_SECRET must be set in env
+    // and shared with identity (the token issuer).
+    const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
+    if (!secret) {
+      throw new InternalServerErrorException('JWT_ACCESS_SECRET is not configured');
+    }
     try {
-      request.user = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET', 'admin-access-secret'),
-      });
+      request.user = await this.jwtService.verifyAsync(token, { secret });
       return true;
     } catch {
       throw new UnauthorizedException('Invalid access token');
