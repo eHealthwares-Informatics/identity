@@ -161,4 +161,17 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
       { code: 'coding-concept.manage', name: 'Manage Coding Concepts', description: 'Manage coding concepts', resource: 'coding_concept', action: 'manage' },
     ],
   },
+  {
+    module: 'shop',
+    moduleDisplayName: 'Shop',
+    permissions: [
+      { code: 'shop.pos', name: 'POS', description: 'Access the shop POS surface', resource: 'pos', action: 'access' },
+      { code: 'shop.pos.dispense', name: 'POS Dispense', description: 'Dispense a prescription from the POS', resource: 'pos', action: 'dispense' },
+      { code: 'shop.pos.settings', name: 'POS Settings', description: 'Manage POS configuration', resource: 'pos', action: 'settings' },
+      { code: 'shop.purchases', name: 'Shop Purchases', description: 'Access shop purchasing', resource: 'purchases', action: 'access' },
+      { code: 'shop.purchases.receive', name: 'Receive Purchases', description: 'Receive shop purchase orders', resource: 'purchases', action: 'receive' },
+      { code: 'shop.purchases.order', name: 'Order Purchases', description: 'Raise shop purchase orders', resource: 'purchases', action: 'order' },
+      { code: 'shop.purchases.approve', name: 'Approve Purchases', description: 'Approve shop purchase orders', resource: 'purchases', action: 'approve' },
+    ],
+  },
 ];
