@@ -27,6 +27,7 @@ describe('LogoutUseCase', () => {
     const passwordHasher: jest.Mocked<PasswordHasherPort> = {
       hash: jest.fn(),
       verify: jest.fn(),
+      needsRehash: jest.fn().mockReturnValue(false),
     };
     passwordHasher.hash.mockImplementation(async (raw: string) => `hash:${raw}`);
 

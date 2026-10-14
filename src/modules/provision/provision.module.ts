@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProvisionController } from './controllers/provision.controller';
 import { ProvisionService } from './services/provision.service';
-import { Sha256PasswordHasherService } from '../auth/services/sha256-password-hasher.service';
+import { ScryptPasswordHasherService } from '../auth/services/scrypt-password-hasher.service';
 import { PASSWORD_HASHER } from '../auth/services/identity.di-tokens';
 import { OrganizationOrmEntity } from '../organizations/entities/organization.orm-entity';
 import { LocationOrmEntity } from '../locations/entities/location.orm-entity';
@@ -28,7 +28,7 @@ import { UserOrmEntity } from '../users/entities/user.orm-entity';
   controllers: [ProvisionController],
   providers: [
     ProvisionService,
-    { provide: PASSWORD_HASHER, useClass: Sha256PasswordHasherService },
+    { provide: PASSWORD_HASHER, useClass: ScryptPasswordHasherService },
   ],
   exports: [ProvisionService],
 })

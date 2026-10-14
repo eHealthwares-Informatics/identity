@@ -72,6 +72,7 @@ function buildHarness(overrides: Record<string, string> = {}): Harness {
   const passwordHasher: jest.Mocked<PasswordHasherPort> = {
     verify: jest.fn(),
     hash: jest.fn().mockResolvedValue('hashed'),
+      needsRehash: jest.fn().mockReturnValue(false),
   };
 
   const tokenIssuer: jest.Mocked<TokenIssuerPort> = {

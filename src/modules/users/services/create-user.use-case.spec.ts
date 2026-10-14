@@ -36,6 +36,7 @@ describe('CreateUserUseCase', () => {
     const passwordHasher: jest.Mocked<PasswordHasherPort> = {
       hash: jest.fn(async (raw: string) => `hash:${raw}`),
       verify: jest.fn(),
+      needsRehash: jest.fn().mockReturnValue(false),
     };
 
     const useCase = new CreateUserUseCase(userRepository, passwordHasher, roleRepository);
