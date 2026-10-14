@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { UpdateRoleDto } from '../dto/update-role.dto';
@@ -87,6 +87,18 @@ export class RolesController {
   @Roles('super_admin')
   @ApiOperation({ summary: 'Update a role' })
   async update(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
+    const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
+    return toResponse(role);
+  }
+
+  // The role editor's edit modal submits PATCH (the data-page update mutation),
+  // and the UC documents `PATCH /roles/{id}`. The rxsoft proxy maps PATCH → the
+  // PUT above, but identity's own API 404'd a direct PATCH — the same footgun as
+  // the coupons route (rxsoft-qa#799). Both verbs now hit the same use case.
+  @Patch(':id')
+  @Roles('super_admin')
+  @ApiOperation({ summary: 'Update a role (PATCH alias of PUT)' })
+  async patch(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
     const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
     return toResponse(role);
   }
