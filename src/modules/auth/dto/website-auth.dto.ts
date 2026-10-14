@@ -38,6 +38,15 @@ export class WebsiteOAuthDto {
   @IsString()
   @IsOptional()
   idToken?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Consumer channel resolving the sign-in org/role (generic /auth/oauth/* endpoints)',
+    enum: ['website', 'console', 'shopper', 'emr'],
+  })
+  @IsIn(['website', 'console', 'shopper', 'emr'])
+  @IsOptional()
+  channel?: 'website' | 'console' | 'shopper' | 'emr';
 }
 
 export class WebsiteForgotPasswordDto {

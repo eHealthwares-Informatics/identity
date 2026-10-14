@@ -51,18 +51,6 @@ class MeResponse {
   @ApiProperty() roles!: string[];
   @ApiProperty() permissions!: string[];
   @ApiProperty() modules!: ModuleInfoDto[];
-  /**
-   * How the effective permissions were resolved:
-   *  - 'org'  — permissions derive from the user's organisation-scoped roles
-   *             (the only mode today; role_permissions is the single source).
-   *  - 'user' — reserved for user-direct permission grants layered on top of
-   *             the org roles (later phase — see the access-control plan).
-   *
-   * The UI enforcement ladder driven by these permissions (phased):
-   *   ROLE (module hidden) -> MENU (menu group hidden)
-   *   -> SUBMENU (menu item hidden) -> ACTIONS (buttons/links hidden).
-   */
-  @ApiProperty({ enum: ['org', 'user'], example: 'org' }) permissionMode!: 'org' | 'user';
 }
 
 @ApiTags('auth')
@@ -176,6 +164,34 @@ export class AuthController {
   }
 
   @Public()
+  @Post('oauth/google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Sign in with a Google access token or ID token for any consumer channel (link-by-verified-email or auto-register)',
+  })
+  oauthGoogle(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.oauthGoogleSignInForChannel(
+      payload,
+      payload.channel ?? 'website',
+    );
+  }
+
+  @Public()
+  @Post('oauth/facebook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Sign in with a Facebook access token for any consumer channel (link-by-verified-email or auto-register)',
+  })
+  oauthFacebook(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.oauthFacebookSignInForChannel(
+      payload.accessToken ?? '',
+      payload.channel ?? 'website',
+    );
+  }
+
+  @Public()
   @Post('website/forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Email a password-reset link to a website shopper' })
@@ -237,9 +253,6 @@ export class AuthController {
       roles: currentUser.roles,
       permissions: currentUser.permissions,
       modules: getUserModules(currentUser.permissions, currentUser.roles),
-      // Phase 1 of the access-control plan: permissions resolve from the
-      // user's org-scoped roles. 'user' (direct user grants) arrives later.
-      permissionMode: 'org',
     };
   }
 
