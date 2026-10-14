@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThan, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { compressPermissions } from '../../../common/utils/permission-set';
 import { PhoneOtpOrmEntity } from '../entities/phone-otp.orm-entity';
 import { User } from '../../users/domains/user.entity';
 import type { UserRepository } from '../../users/repositories/user.repository';
@@ -443,7 +444,9 @@ export class WebsiteAuthService {
     const roles = user.organizationId
       ? await this.roleRepository.listByCodes(user.roleCodes, user.organizationId)
       : [];
-    const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
+    // Minimal set: a parent grant covers its subtree, so children it already
+    // covers are dropped rather than shipped in the token and /auth/me.
+    const permissions = compressPermissions(roles.flatMap((role) => role.permissionCodes));
 
     const tokenPair = await this.tokenIssuer.issuePair(
       {

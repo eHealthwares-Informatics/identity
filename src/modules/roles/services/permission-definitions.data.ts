@@ -12,9 +12,17 @@ export interface ModulePermissionDefinition {
 
 export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
   {
+    module: 'rxsoft',
+    moduleDisplayName: 'RxSoft',
+    permissions: [
+      { code: 'rxsoft', name: 'RxSoft (all)', description: 'Full access to every RxSoft module', resource: 'rxsoft', action: 'manage' },
+    ],
+  },
+  {
     module: 'rxsoft.identity',
     moduleDisplayName: 'Identity & Access',
     permissions: [
+      { code: 'rxsoft.identity', name: 'Identity & Access (all)', description: 'Full access to the Identity & Access module', resource: 'identity', action: 'manage' },
       { code: 'rxsoft.identity.user.create', name: 'Create User', description: 'Create new user accounts', resource: 'user', action: 'create' },
       { code: 'rxsoft.identity.user.read', name: 'Read User', description: 'View user details', resource: 'user', action: 'read' },
       { code: 'rxsoft.identity.user.update', name: 'Update User', description: 'Modify user accounts', resource: 'user', action: 'update' },
@@ -30,6 +38,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.catalog',
     moduleDisplayName: 'Catalog',
     permissions: [
+      { code: 'rxsoft.catalog', name: 'Catalog (all)', description: 'Full access to the Catalog module', resource: 'catalog', action: 'manage' },
       { code: 'rxsoft.catalog.item.create', name: 'Create Item', description: 'Create new items', resource: 'item', action: 'create' },
       { code: 'rxsoft.catalog.item.read', name: 'Read Item', description: 'View items', resource: 'item', action: 'read' },
       { code: 'rxsoft.catalog.item.update', name: 'Update Item', description: 'Modify items', resource: 'item', action: 'update' },
@@ -40,6 +49,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.sales',
     moduleDisplayName: 'Sales',
     permissions: [
+      { code: 'rxsoft.sales', name: 'Sales (all)', description: 'Full access to the Sales module', resource: 'sales', action: 'manage' },
       { code: 'rxsoft.sales.sale.create', name: 'Create Sale', description: 'Create new sales', resource: 'sale', action: 'create' },
       { code: 'rxsoft.sales.sale.read', name: 'Read Sale', description: 'View sales', resource: 'sale', action: 'read' },
       { code: 'rxsoft.sales.sale.update', name: 'Update Sale', description: 'Modify sales', resource: 'sale', action: 'update' },
@@ -50,6 +60,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.inventory',
     moduleDisplayName: 'Inventory',
     permissions: [
+      { code: 'rxsoft.inventory', name: 'Inventory (all)', description: 'Full access to the Inventory module', resource: 'inventory', action: 'manage' },
       { code: 'rxsoft.inventory.stock.read', name: 'Read Stock', description: 'View stock balances', resource: 'stock', action: 'read' },
       { code: 'rxsoft.inventory.stock.adjust', name: 'Adjust Stock', description: 'Adjust stock quantities', resource: 'stock', action: 'adjust' },
       { code: 'rxsoft.inventory.stock.transfer', name: 'Transfer Stock', description: 'Transfer between locations', resource: 'stock', action: 'transfer' },
@@ -59,6 +70,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.purchases',
     moduleDisplayName: 'Purchases',
     permissions: [
+      { code: 'rxsoft.purchases', name: 'Purchases (all)', description: 'Full access to the Purchases module', resource: 'purchases', action: 'manage' },
       { code: 'rxsoft.purchases.order.create', name: 'Create Purchase Order', description: 'Create purchase orders', resource: 'purchase_order', action: 'create' },
       { code: 'rxsoft.purchases.order.read', name: 'Read Purchase Order', description: 'View purchase orders', resource: 'purchase_order', action: 'read' },
       { code: 'rxsoft.purchases.order.update', name: 'Update Purchase Order', description: 'Modify purchase orders', resource: 'purchase_order', action: 'update' },
@@ -68,6 +80,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.receivables',
     moduleDisplayName: 'Receivables',
     permissions: [
+      { code: 'rxsoft.receivables', name: 'Receivables (all)', description: 'Full access to the Receivables module', resource: 'receivables', action: 'manage' },
       { code: 'rxsoft.receivables.transaction.create', name: 'Create Transaction', description: 'Record receivable transactions', resource: 'receivable', action: 'create' },
       { code: 'rxsoft.receivables.transaction.read', name: 'Read Transaction', description: 'View receivable transactions', resource: 'receivable', action: 'read' },
     ],
@@ -76,6 +89,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.reports',
     moduleDisplayName: 'Reports',
     permissions: [
+      { code: 'rxsoft.reports', name: 'Reports (all)', description: 'Full access to the Reports module', resource: 'reports', action: 'manage' },
       { code: 'rxsoft.reports.sales.view', name: 'View Sales Reports', description: 'Access sales reports', resource: 'report', action: 'view' },
       { code: 'rxsoft.reports.inventory.view', name: 'View Inventory Reports', description: 'Access inventory reports', resource: 'report', action: 'view' },
       { code: 'rxsoft.reports.financial.view', name: 'View Financial Reports', description: 'Access financial reports', resource: 'report', action: 'view' },
@@ -85,6 +99,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.admin',
     moduleDisplayName: 'Administration',
     permissions: [
+      { code: 'rxsoft.admin', name: 'Administration (all)', description: 'Full access to the Administration module', resource: 'admin', action: 'manage' },
       { code: 'rxsoft.admin.audit.read', name: 'Read Audit Logs', description: 'View audit logs', resource: 'audit', action: 'read' },
       { code: 'rxsoft.admin.settings.read', name: 'Read Settings', description: 'View system settings', resource: 'settings', action: 'read' },
       { code: 'rxsoft.admin.settings.update', name: 'Update Settings', description: 'Modify system settings', resource: 'settings', action: 'update' },
@@ -94,6 +109,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'rxsoft.website',
     moduleDisplayName: 'Website',
     permissions: [
+      { code: 'rxsoft.website', name: 'Website (all)', description: 'Full access to the Website module', resource: 'website', action: 'manage' },
       { code: 'rxsoft.website.content.read', name: 'Read Content', description: 'View website content', resource: 'content', action: 'read' },
       { code: 'rxsoft.website.content.create', name: 'Create Content', description: 'Create website content', resource: 'content', action: 'create' },
       { code: 'rxsoft.website.content.manage', name: 'Manage Content', description: 'Manage website content', resource: 'content', action: 'manage' },
@@ -111,6 +127,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'lis',
     moduleDisplayName: 'LIS',
     permissions: [
+      { code: 'lis', name: 'LIS (all)', description: 'Full access to the LIS module', resource: 'lis', action: 'manage' },
       { code: 'lis.order.create', name: 'Create Order', description: 'Create lab orders', resource: 'lis_order', action: 'create' },
       { code: 'lis.order.read', name: 'Read Order', description: 'View lab orders', resource: 'lis_order', action: 'read' },
       { code: 'lis.order.update', name: 'Update Order', description: 'Modify lab orders', resource: 'lis_order', action: 'update' },
@@ -123,6 +140,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'emr',
     moduleDisplayName: 'EMR',
     permissions: [
+      { code: 'emr', name: 'EMR (all)', description: 'Full access to the EMR module', resource: 'emr', action: 'manage' },
       { code: 'emr.patient.create', name: 'Create Patient', description: 'Create patient records', resource: 'patient', action: 'create' },
       { code: 'emr.patient.read', name: 'Read Patient', description: 'View patient records', resource: 'patient', action: 'read' },
       { code: 'emr.patient.update', name: 'Update Patient', description: 'Modify patient records', resource: 'patient', action: 'update' },
@@ -138,6 +156,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'conversation',
     moduleDisplayName: 'Conversation',
     permissions: [
+      { code: 'conversation', name: 'Conversation (all)', description: 'Full access to the Conversation module', resource: 'conversation', action: 'manage' },
       { code: 'conversation.read', name: 'Read Conversations', description: 'View conversations', resource: 'conversation', action: 'read' },
       { code: 'conversation.create', name: 'Create Conversations', description: 'Start new conversations', resource: 'conversation', action: 'create' },
       { code: 'conversation.manage', name: 'Manage Conversations', description: 'Manage conversations', resource: 'conversation', action: 'manage' },
@@ -147,6 +166,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'communication',
     moduleDisplayName: 'Switch',
     permissions: [
+      { code: 'communication', name: 'Switch (all)', description: 'Full access to the Switch module', resource: 'communication', action: 'manage' },
       { code: 'communication.read', name: 'Read Communications', description: 'View communications', resource: 'communication', action: 'read' },
       { code: 'communication.create', name: 'Create Communications', description: 'Create communications', resource: 'communication', action: 'create' },
       { code: 'communication.manage', name: 'Manage Communications', description: 'Manage communications', resource: 'communication', action: 'manage' },
@@ -156,6 +176,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'coding-concept',
     moduleDisplayName: 'Coding Concept',
     permissions: [
+      { code: 'coding-concept', name: 'Coding Concept (all)', description: 'Full access to the Coding Concept module', resource: 'coding-concept', action: 'manage' },
       { code: 'coding-concept.read', name: 'Read Coding Concepts', description: 'View coding concepts', resource: 'coding_concept', action: 'read' },
       { code: 'coding-concept.create', name: 'Create Coding Concepts', description: 'Create coding concepts', resource: 'coding_concept', action: 'create' },
       { code: 'coding-concept.manage', name: 'Manage Coding Concepts', description: 'Manage coding concepts', resource: 'coding_concept', action: 'manage' },
@@ -165,6 +186,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     module: 'shop',
     moduleDisplayName: 'Shop',
     permissions: [
+      { code: 'shop', name: 'Shop (all)', description: 'Full access to the Shop module', resource: 'shop', action: 'manage' },
       { code: 'shop.pos', name: 'POS', description: 'Access the shop POS surface', resource: 'pos', action: 'access' },
       { code: 'shop.pos.dispense', name: 'POS Dispense', description: 'Dispense a prescription from the POS', resource: 'pos', action: 'dispense' },
       { code: 'shop.pos.settings', name: 'POS Settings', description: 'Manage POS configuration', resource: 'pos', action: 'settings' },

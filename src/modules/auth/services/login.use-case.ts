@@ -1,6 +1,7 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { compressPermissions } from '../../../common/utils/permission-set';
 import { LoginDto } from '../dto/login.dto';
 import type { UserRepository } from '../../users/repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
@@ -54,7 +55,9 @@ export class LoginUseCase {
     const roles = resolved.organizationId
       ? await this.roleRepository.listByCodes(resolved.roleCodes, resolved.organizationId)
       : [];
-    const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
+    // Minimal set: a parent grant covers its subtree, so children it already
+    // covers are dropped rather than shipped in the token and /auth/me.
+    const permissions = compressPermissions(roles.flatMap((role) => role.permissionCodes));
 
     const tokenPair = await this.tokenIssuer.issuePair(
       {
