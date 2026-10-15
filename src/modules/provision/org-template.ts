@@ -27,21 +27,21 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
     name: 'Administrator',
     description: 'Organisation owner — full business access within the organisation',
     permissions: [
-      'rxsoft.*',
-      'rxsoft.identity.*',
-      'rxsoft.admin.*',
-      'rxsoft.catalog.*',
-      'rxsoft.sales.*',
-      'rxsoft.inventory.*',
-      'rxsoft.purchases.*',
-      'rxsoft.receivables.*',
-      'rxsoft.reports.*',
-      'rxsoft.website.*',
-      'lis.*',
-      'emr.*',
-      'conversation.*',
-      'communication.*',
-      'coding-concept.*',
+      'rxsoft',
+      'rxsoft.identity',
+      'rxsoft.admin',
+      'rxsoft.catalog',
+      'rxsoft.sales',
+      'rxsoft.inventory',
+      'rxsoft.purchases',
+      'rxsoft.receivables',
+      'rxsoft.reports',
+      'rxsoft.website',
+      'lis',
+      'emr',
+      'conversation',
+      'communication',
+      'coding-concept',
     ],
   },
   cashier: {
@@ -64,7 +64,7 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.inventory.stock.read',
       'rxsoft.sales.sale.read',
       'rxsoft.sales.sale.create',
-      'rxsoft.reports.*',
+      'rxsoft.reports',
       'shop.pos',
       'shop.pos.dispense',
     ],
@@ -92,7 +92,7 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.inventory.stock.read',
       'rxsoft.receivables.transaction.read',
       'rxsoft.receivables.transaction.create',
-      'rxsoft.reports.*',
+      'rxsoft.reports',
     ],
   },
   inventory_clerk: {
@@ -113,7 +113,7 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.sales.sale.read',
       'rxsoft.inventory.stock.read',
       'rxsoft.receivables.transaction.read',
-      'rxsoft.reports.*',
+      'rxsoft.reports',
       'rxsoft.admin.audit.read',
       'lis.order.read',
       'lis.result.read',
@@ -183,3 +183,99 @@ export const DEFAULT_ORG_DEPARTMENTS: DepartmentTemplate[] = [
 // derived. See provision.service.ts (loadRetailPrices / retailFor / openingFor).
 
 export const RETAIL_PRICE_LIST_CODE = 'RETAIL';
+
+export interface WardTemplate {
+  departmentCode: string;
+  code: string;
+  name: string;
+  type: string;
+}
+
+export const DEFAULT_ORG_WARDS: WardTemplate[] = [
+  { departmentCode: 'INPATIENT', code: 'INP-MALE', name: 'Male Ward', type: 'GENERAL' },
+  { departmentCode: 'INPATIENT', code: 'INP-FEMALE', name: 'Female Ward', type: 'GENERAL' },
+  { departmentCode: 'ICU', code: 'ICU-MALE', name: 'Male ICU', type: 'ICU' },
+  { departmentCode: 'ICU', code: 'ICU-FEMALE', name: 'Female ICU', type: 'ICU' },
+];
+
+/** Beds provisioned per ward (codes `<WARD>-01`…`<WARD>-0N`, STANDARD type). */
+export const BEDS_PER_WARD = 6;
+
+/** Bed code → status overrides (the rest stay AVAILABLE). */
+export const DEMO_BED_STATUSES: Record<string, string> = {
+  'INP-MALE-01': 'OCCUPIED',
+  'INP-FEMALE-01': 'OCCUPIED',
+  'INP-MALE-06': 'MAINTENANCE',
+};
+
+export interface DemoPatientTemplate {
+  patientId: string;
+  firstName: string;
+  lastName: string;
+  gender: string;
+  dateOfBirth: string;
+  phone: string;
+}
+
+export const DEMO_ORG_PATIENTS: DemoPatientTemplate[] = [
+  { patientId: 'MRN-DEMO-001', firstName: 'Chidi', lastName: 'Okonkwo', gender: 'MALE', dateOfBirth: '1981-04-12', phone: '08011100001' },
+  { patientId: 'MRN-DEMO-002', firstName: 'Amina', lastName: 'Bello', gender: 'FEMALE', dateOfBirth: '1990-09-03', phone: '08011100002' },
+  { patientId: 'MRN-DEMO-003', firstName: 'Emeka', lastName: 'Nwosu', gender: 'MALE', dateOfBirth: '1975-01-27', phone: '08011100003' },
+  { patientId: 'MRN-DEMO-004', firstName: 'Fatima', lastName: 'Yusuf', gender: 'FEMALE', dateOfBirth: '1986-11-19', phone: '08011100004' },
+  { patientId: 'MRN-DEMO-005', firstName: 'Tunde', lastName: 'Adeyemi', gender: 'MALE', dateOfBirth: '1968-06-08', phone: '08011100005' },
+  { patientId: 'MRN-DEMO-006', firstName: 'Ngozi', lastName: 'Okafor', gender: 'FEMALE', dateOfBirth: '1993-02-25', phone: '08011100006' },
+];
+
+export interface DemoAdmissionTemplate {
+  admissionNumber: string;
+  patientMrn: string;
+  wardCode: string;
+  bedCode: string;
+  admissionType: string;
+  diagnosis: string;
+  /** Days before now the patient was admitted. */
+  admittedDaysAgo: number;
+  status: 'ADMITTED' | 'DISCHARGED';
+  dischargeType?: string;
+  dischargeSummary?: string;
+}
+
+export const DEMO_ORG_ADMISSIONS: DemoAdmissionTemplate[] = [
+  {
+    admissionNumber: 'ADM-DEMO-001',
+    patientMrn: 'MRN-DEMO-001',
+    wardCode: 'INP-MALE',
+    bedCode: 'INP-MALE-01',
+    admissionType: 'MEDICAL',
+    diagnosis: 'Community-acquired pneumonia',
+    admittedDaysAgo: 3,
+    status: 'ADMITTED',
+  },
+  {
+    admissionNumber: 'ADM-DEMO-002',
+    patientMrn: 'MRN-DEMO-002',
+    wardCode: 'INP-FEMALE',
+    bedCode: 'INP-FEMALE-01',
+    admissionType: 'SURGICAL',
+    diagnosis: 'Post-appendectomy recovery',
+    admittedDaysAgo: 1,
+    status: 'ADMITTED',
+  },
+  {
+    admissionNumber: 'ADM-DEMO-003',
+    patientMrn: 'MRN-DEMO-003',
+    wardCode: 'INP-MALE',
+    bedCode: 'INP-MALE-02',
+    admissionType: 'URGENT',
+    diagnosis: 'Uncontrolled hypertension',
+    admittedDaysAgo: 9,
+    status: 'DISCHARGED',
+    dischargeType: 'DISCHARGED_HOME',
+    dischargeSummary: 'Blood pressure stabilised on oral medication; follow-up in OPD in two weeks.',
+  },
+];
+
+// Provisioned organisations price/stock EVERY whitelisted item: retail prices
+// are read from the generated price_list_items.json (seeds/backend/inline) with
+// a deterministic fallback, and opening stock/cost are derived. See
+// provision.service.ts (loadRetailPrices / retailFor / openingFor).

@@ -12,6 +12,11 @@ import { PermissionOrmEntity } from '../../roles/entities/permission.orm-entity'
 import { UserOrmEntity } from '../../users/entities/user.orm-entity';
 import {
   DEFAULT_ORG_DEPARTMENTS,
+  DEFAULT_ORG_WARDS,
+  BEDS_PER_WARD,
+  DEMO_BED_STATUSES,
+  DEMO_ORG_PATIENTS,
+  DEMO_ORG_ADMISSIONS,
   DEFAULT_ORGANIZATION_ID,
   LOCATION_HQ_CODE,
   LOCATION_HQ_NAME,
@@ -139,6 +144,154 @@ export class ProvisionService {
     }));
     await deptTarget.save(departmentRows);
     this.logger.log(`Provisioning ${departmentRows.length} EMR departments for ${orgCode}`);
+
+    // ── emr: wards (two per inpatient department) + beds ──────────────
+    const wardTarget = new RawUpsertTarget(this.emrDb, 'wards', ['id'], orgId);
+    const existingWards = await wardTarget.findAll();
+    const wardByCode = new Map(existingWards.map((w) => [w.code as string, w]));
+    const wardRows = DEFAULT_ORG_WARDS.flatMap((tpl) => {
+      const department = deptByCode.get(tpl.departmentCode);
+      if (!department) return [];
+      const existing = wardByCode.get(tpl.code);
+      return [
+        {
+          id: existing?.id ?? randomUUID(),
+          organization_id: orgId,
+          location_id: hq.id,
+          code: tpl.code,
+          name: tpl.name,
+          ward_type: tpl.type,
+          department_id: String(department.id),
+          department_type: String(department.department_type ?? ''),
+          description: `${tpl.name} for ${String(department.name)}`,
+          is_active: true,
+        },
+      ];
+    });
+    await wardTarget.save(wardRows);
+
+    const bedTarget = new RawUpsertTarget(this.emrDb, 'beds', ['id'], orgId);
+    const existingBeds = await bedTarget.findAll();
+    const bedByCode = new Map(existingBeds.map((b) => [b.code as string, b]));
+    const bedRows = wardRows.flatMap((ward) =>
+      Array.from({ length: BEDS_PER_WARD }, (_, i) => {
+        const code = `${ward.code as string}-${String(i + 1).padStart(2, '0')}`;
+        const existing = bedByCode.get(code);
+        return {
+          id: existing?.id ?? randomUUID(),
+          organization_id: orgId,
+          location_id: hq.id,
+          ward_id: ward.id,
+          code,
+          bed_type: 'STANDARD',
+          status: DEMO_BED_STATUSES[code] ?? 'AVAILABLE',
+          notes: null,
+        };
+      }),
+    );
+    await bedTarget.save(bedRows);
+    this.logger.log(
+      `Provisioning ${wardRows.length} wards and ${bedRows.length} beds for ${orgCode}`,
+    );
+
+    // ── emr: demo patients ────────────────────────────────────────────
+    // patients.patient_id carries a GLOBAL unique index (not org-scoped),
+    // so demo MRNs must be suffixed per organisation or the second
+    // provisioning on this database fails with 23505. Suffix = orgCode.
+    const mrn = (base: string) => `${base}-${orgCode}`;
+    const patientTarget = new RawUpsertTarget(this.emrDb, 'patients', ['id'], orgId);
+    const existingPatients = await patientTarget.findAll();
+    const patientByMrn = new Map(existingPatients.map((p) => [p.patient_id as string, p]));
+    const patientRows = DEMO_ORG_PATIENTS.map((tpl) => {
+      const patientId = mrn(tpl.patientId);
+      const existing = patientByMrn.get(patientId);
+      return {
+        id: existing?.id ?? randomUUID(),
+        organization_id: orgId,
+        location_id: hq.id,
+        patient_id: patientId,
+        first_name: tpl.firstName,
+        last_name: tpl.lastName,
+        gender: tpl.gender,
+        date_of_birth: tpl.dateOfBirth,
+        phone: tpl.phone,
+        is_active: true,
+      };
+    });
+    await patientTarget.save(patientRows);
+    const mrnByBaseMrn = new Map(DEMO_ORG_PATIENTS.map((p) => [p.patientId, mrn(p.patientId)]));
+
+    // ── emr: demo admissions/discharges (drive the ward board) ────────
+    // Each demo admission gets its own linked visit — admissions extend
+    // visits, so encounters/requests attach through visit_id. visits.
+    // visit_number is also GLOBALLY unique → suffix with orgCode.
+    const visitTarget = new RawUpsertTarget(this.emrDb, 'visits', ['id'], orgId);
+    const existingVisits = await visitTarget.findAll();
+    const visitByNumber = new Map(existingVisits.map((v) => [v.visit_number as string, v]));
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const visitNumber = (index: number) =>
+      `VIS-DEMO-${String(index + 1).padStart(3, '0')}-${orgCode}`;
+    const patientNameByMrn = new Map(
+      DEMO_ORG_PATIENTS.map((p) => [p.patientId, `${p.firstName} ${p.lastName}`]),
+    );
+    const visitRows = DEMO_ORG_ADMISSIONS.map((tpl, index) => {
+      const visitNo = visitNumber(index);
+      const existing = visitByNumber.get(visitNo);
+      const admittedAt = new Date(now - tpl.admittedDaysAgo * DAY_MS).toISOString();
+      const discharged = tpl.status === 'DISCHARGED';
+      return {
+        id: existing?.id ?? randomUUID(),
+        organization_id: orgId,
+        location_id: hq.id,
+        visit_number: visitNo,
+        patient_id: mrnByBaseMrn.get(tpl.patientMrn) ?? tpl.patientMrn,
+        patient_name: patientNameByMrn.get(tpl.patientMrn) ?? tpl.patientMrn,
+        visit_type: 'INPATIENT',
+        status: discharged ? 'COMPLETED' : 'ONGOING',
+        start_datetime: admittedAt,
+        stop_datetime: discharged ? new Date(now - 2 * DAY_MS).toISOString() : null,
+        provider_name: null,
+        notes: null,
+      };
+    });
+    await visitTarget.save(visitRows);
+    const visitIdByNumber = new Map(visitRows.map((v) => [v.visit_number as string, v.id]));
+
+    const admissionTarget = new RawUpsertTarget(this.emrDb, 'admissions', ['id'], orgId);
+    const existingAdmissions = await admissionTarget.findAll();
+    const admissionByNumber = new Map(
+      existingAdmissions.map((a) => [a.admission_number as string, a]),
+    );
+    const wardIdByCode = new Map(wardRows.map((w) => [w.code as string, w.id]));
+    const bedIdByCode = new Map(bedRows.map((b) => [b.code as string, b.id]));
+    const admissionRows = DEMO_ORG_ADMISSIONS.map((tpl, index) => {
+      const existing = admissionByNumber.get(tpl.admissionNumber);
+      return {
+        id: existing?.id ?? randomUUID(),
+        organization_id: orgId,
+        location_id: hq.id,
+        admission_number: tpl.admissionNumber,
+        patient_id: mrnByBaseMrn.get(tpl.patientMrn) ?? tpl.patientMrn,
+        patient_name: patientNameByMrn.get(tpl.patientMrn) ?? tpl.patientMrn,
+        ward_id: wardIdByCode.get(tpl.wardCode) ?? null,
+        bed_id: bedIdByCode.get(tpl.bedCode) ?? null,
+        admission_datetime: new Date(now - tpl.admittedDaysAgo * DAY_MS).toISOString(),
+        admission_type: tpl.admissionType,
+        diagnosis: tpl.diagnosis,
+        status: tpl.status,
+        discharge_datetime:
+          tpl.status === 'DISCHARGED' ? new Date(now - 2 * DAY_MS).toISOString() : null,
+        discharge_type: tpl.dischargeType ?? null,
+        discharge_summary: tpl.dischargeSummary ?? null,
+        visit_id: visitIdByNumber.get(visitNumber(index)) ?? null,
+        notes: null,
+      };
+    });
+    await admissionTarget.save(admissionRows);
+    this.logger.log(
+      `Provisioning ${visitRows.length} visits, ${patientRows.length} demo patients and ${admissionRows.length} admissions for ${orgCode}`,
+    );
 
     // ── identity: org-scoped roles ─────────────────────────────────────
     const existingRoles = await this.roleRepository.find({
@@ -541,6 +694,41 @@ export class ProvisionService {
       });
     }
     await partyTarget.save(partyRows);
+
+    // ── backend: minimal GL accounts (starter chart of accounts) ────────
+    // gl_accounts is strictly org-scoped (uq_gl_accounts_org_code on
+    // organization_id + account_code) and nothing seeds them globally, so a
+    // fresh org has an empty chart of accounts. Seed a starter set — the e2e
+    // artifact check and any accounting flow read it right after provisioning.
+    const glTarget = new RawUpsertTarget(this.backendDb, 'gl_accounts', ['id'], orgId);
+    const existingGl = await glTarget.findAll();
+    const glByCode = new Map(existingGl.map((g) => [g.account_code as string, g]));
+    const glTemplates: Array<{ code: string; name: string; type: string }> = [
+      { code: '1000', name: 'Cash & Cash Equivalents', type: 'asset' },
+      { code: '1100', name: 'Bank', type: 'asset' },
+      { code: '1200', name: 'Accounts Receivable', type: 'asset' },
+      { code: '1300', name: 'Inventory', type: 'asset' },
+      { code: '2000', name: 'Accounts Payable', type: 'liability' },
+      { code: '3000', name: 'Shareholder Equity', type: 'equity' },
+      { code: '4000', name: 'Sales Revenue', type: 'income' },
+      { code: '5000', name: 'Cost of Goods Sold', type: 'expense' },
+      { code: '5100', name: 'Operating Expenses', type: 'expense' },
+    ];
+    const glRows = glTemplates
+      .filter((tpl) => !glByCode.has(tpl.code))
+      .map((tpl) => ({
+        id: randomUUID(),
+        organization_id: orgId,
+        account_code: tpl.code,
+        account_name: tpl.name,
+        account_type: tpl.type,
+        allows_reconciliation: false,
+        is_active: true,
+      }));
+    if (glRows.length > 0) {
+      await glTarget.save(glRows);
+      this.logger.log(`Provisioning ${glRows.length} GL accounts for ${orgCode}`);
+    }
 
     // ── backend: user_pos_configs for provisioned users ─────────────────
     const upcTarget = new RawUpsertTarget(

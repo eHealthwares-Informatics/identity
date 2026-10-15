@@ -42,6 +42,15 @@ const REFERENCE_SOURCES: ReferenceSource[] = [
     path: 'seed/src/provision/org-template.ts',
     namespaces: ['rxsoft', 'shop', 'identity', 'admin', 'lis', 'emr', 'conversation', 'communication'],
   },
+  {
+    // Identity has its own provisioner and its own copy of the template. They
+    // are deliberate duplicates, so they drift — this one still had the 18 `.*`
+    // grants after the seed copy moved to parent grants, which would have
+    // regressed rxsoft-qa#798 for anyone provisioned through identity.
+    name: 'identity provision template (role grants)',
+    path: 'identity/src/modules/provision/org-template.ts',
+    namespaces: ['rxsoft', 'shop', 'identity', 'admin', 'lis', 'emr', 'conversation', 'communication'],
+  },
 ];
 
 /**
