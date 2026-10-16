@@ -164,6 +164,34 @@ export class AuthController {
   }
 
   @Public()
+  @Post('oauth/google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Sign in with a Google access token or ID token for any consumer channel (link-by-verified-email or auto-register)',
+  })
+  oauthGoogle(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.oauthGoogleSignInForChannel(
+      payload,
+      payload.channel ?? 'website',
+    );
+  }
+
+  @Public()
+  @Post('oauth/facebook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Sign in with a Facebook access token for any consumer channel (link-by-verified-email or auto-register)',
+  })
+  oauthFacebook(@Body() payload: WebsiteOAuthDto): Promise<AuthResponseDto> {
+    return this.websiteAuthService.oauthFacebookSignInForChannel(
+      payload.accessToken ?? '',
+      payload.channel ?? 'website',
+    );
+  }
+
+  @Public()
   @Post('website/forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Email a password-reset link to a website shopper' })
