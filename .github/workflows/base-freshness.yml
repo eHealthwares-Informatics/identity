@@ -8,23 +8,28 @@ name: base freshness
 #   - CI → green (no test pins the tree)
 #   - the merge → clean (no conflict markers)
 #
-# This has now cost us real downtime, not just near-misses:
+# That has already cost this org real downtime:
 #
-#   - rxsoft-qa#803 — `main` would not compile (`TS2451: Cannot redeclare
-#     block-scoped variable 'UUID_RE'`). The duplicate had already been removed
-#     twice (db9e634, da35a74 / PR #81); the `Develop (#89)` merge brought it
-#     back from a branch cut before #81 landed. Fixed by #91 / #92.
-#   - rxsoft-qa#800 — THIS repo: `/auth/me`'s `permissionMode` (PR #7) was
-#     clobbered by the PR #8 merge — still an ancestor, gone from the tree.
+#   - rxsoft-qa#803 — rxsoft `main` would not compile (duplicate `UUID_RE`,
+#     TS2451). Removed twice, silently reverted by a clean merge from a stale
+#     branch, and every dev/QA environment went down.
+#   - rxsoft-qa#800 — identity's `/auth/me` `permissionMode` clobbered by a merge.
 #   - rxsoft-qa#801 — the seed org-template parent grants, caught by diffing
 #     against current main before pushing.
 #
-# This asserts the branch CONTAINS the current base tip — the condition that was
-# violated in all three. It is the CI equivalent of GitHub's "Require branches to
-# be up to date before merging"; enable either, ideally both.
+# This asserts the PR BRANCH contains the current base tip — the condition
+# violated in all three. CI equivalent of GitHub's "Require branches to be up to
+# date before merging"; enable either, ideally both.
 #
-# Mirrors the same guard already running in EHealthwares-Informatics/ui
-# (.github/workflows/base-freshness.yml).
+# ⚠️ The PR head MUST be checked out explicitly. `actions/checkout` defaults to
+# the synthetic MERGE commit (`refs/pull/N/merge`) on a pull_request event, and
+# that commit contains the base tip *by construction* — so the assertion below
+# would pass unconditionally and the job would be pure decoration. (Measured on
+# a deliberately stale branch: HEAD was `9f8cd2e1 Merge <head> into <base>`,
+# i.e. the base tip was its own first parent, and the check still passed.)
+#
+# Running in ui, rxsoft, identity, seed, conversation, concepts, interop, lims,
+# emr (rxsoft-qa#801).
 
 on:
   pull_request:
@@ -41,6 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Branch must contain the current base tip
@@ -48,6 +54,9 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           git fetch origin "$BASE_REF" --depth=1
+          echo "head       = $(git rev-parse HEAD)"
+          echo "base tip   = $(git rev-parse "origin/$BASE_REF")"
+          echo "merge-base = $(git merge-base HEAD "origin/$BASE_REF" || echo none)"
           if git merge-base --is-ancestor "origin/$BASE_REF" HEAD; then
             echo "Base is current — merging cannot revert a merged fix."
           else
