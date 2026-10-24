@@ -58,8 +58,8 @@ export class LoginUseCase {
     // failed upgrade must never fail the login itself.
     if (this.passwordHasher.needsRehash(resolved.passwordHash)) {
       try {
-        const passwordHash = await this.passwordHasher.hash(payload.password);
-        await this.userRepository.update({ ...resolved, passwordHash });
+        resolved.passwordHash = await this.passwordHasher.hash(payload.password);
+        await this.userRepository.update(resolved);
       } catch {
         // Ignore — the account still signs in and upgrades on a later login.
       }

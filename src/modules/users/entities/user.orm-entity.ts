@@ -3,6 +3,7 @@ import { Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinTable, M
 @Entity('users')
 @Unique('uq_users_org_username', ['organizationId', 'username'])
 @Index('uq_users_email', ['email'], { unique: true })
+@Index('idx_users_oauth_identity', ['oauthProvider', 'oauthProviderId'])
 export class UserOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -33,6 +34,36 @@ export class UserOrmEntity {
 
   @Column({ name: 'login_timeout_minutes', type: 'integer', nullable: true })
   loginTimeoutMinutes!: number | null;
+
+  // ── Profile (populated from the identity provider on OAuth sign-in) ──
+
+  @Column({ name: 'first_name', type: 'text', nullable: true })
+  firstName?: string | null;
+
+  @Column({ name: 'last_name', type: 'text', nullable: true })
+  lastName?: string | null;
+
+  @Column({ name: 'display_name', type: 'text', nullable: true })
+  displayName?: string | null;
+
+  /** Calendar date only — TypeORM returns/accepts 'YYYY-MM-DD' for `date`. */
+  @Column({ name: 'date_of_birth', type: 'date', nullable: true })
+  dateOfBirth?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  gender?: string | null;
+
+  @Column({ name: 'picture_url', type: 'text', nullable: true })
+  pictureUrl?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  locale?: string | null;
+
+  @Column({ name: 'oauth_provider', type: 'text', nullable: true })
+  oauthProvider?: string | null;
+
+  @Column({ name: 'oauth_provider_id', type: 'text', nullable: true })
+  oauthProviderId?: string | null;
 
   @ManyToMany('RoleOrmEntity', 'users')
   @JoinTable({

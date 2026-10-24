@@ -48,6 +48,14 @@ export class UsersController {
       roles: user.roleCodes ?? [],
       isActive: user.isActive,
       loginTimeoutMinutes: user.loginTimeoutMinutes ?? null,
+      firstName: user.profile?.firstName ?? null,
+      lastName: user.profile?.lastName ?? null,
+      displayName: user.profile?.displayName ?? null,
+      dateOfBirth: user.profile?.dateOfBirth ?? null,
+      gender: user.profile?.gender ?? null,
+      pictureUrl: user.profile?.pictureUrl ?? null,
+      locale: user.profile?.locale ?? null,
+      oauthProvider: user.profile?.oauthProvider ?? null,
     };
   }
 

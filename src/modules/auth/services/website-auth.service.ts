@@ -8,10 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThan, Repository } from 'typeorm';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { compressPermissions } from '../../../common/utils/permission-set';
 import { PhoneOtpOrmEntity } from '../entities/phone-otp.orm-entity';
-import { User } from '../../users/domains/user.entity';
+import { User, type UserProfile } from '../../users/domains/user.entity';
 import type { UserRepository } from '../../users/repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
@@ -41,11 +41,69 @@ export type OAuthChannelConfig = {
 
 export type OAuthProvider = 'google' | 'facebook';
 
+/**
+ * Normalised identity-provider profile. Everything except the provider id is
+ * optional because providers only return the claims the user consented to.
+ * Profile attributes are mapped onto the user row on sign-up and used to fill
+ * blanks on subsequent sign-ins (existing values are never overwritten).
+ */
 export type OAuthUserInfo = {
   provider: OAuthProvider;
   providerUserId: string;
   email?: string | null;
+  /** True when the provider vouched for the email address. */
+  emailVerified?: boolean;
+  /** The provider's `name` claim — how the user wants to be addressed. */
   name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  pictureUrl?: string | null;
+  locale?: string | null;
+  gender?: string | null;
+  /** ISO calendar date (YYYY-MM-DD). */
+  dateOfBirth?: string | null;
+  phone?: string | null;
+};
+
+/** Subset of Google's OIDC userinfo / tokeninfo response we consume. */
+type GoogleProfileClaims = {
+  sub?: string;
+  user_id?: string;
+  email?: string | null;
+  email_verified?: boolean | string;
+  name?: string | null;
+  given_name?: string | null;
+  family_name?: string | null;
+  picture?: string | null;
+  locale?: string | null;
+};
+
+/** Subset of the Google People API `people/me` response we consume. */
+type GooglePerson = {
+  names?: Array<{ givenName?: string; familyName?: string; displayName?: string; metadata?: { primary?: boolean } }>;
+  birthdays?: Array<{
+    date?: { year?: number; month?: number; day?: number };
+    metadata?: { primary?: boolean };
+  }>;
+  genders?: Array<{ value?: string; formattedValue?: string; metadata?: { primary?: boolean } }>;
+  phoneNumbers?: Array<{ value?: string; canonicalForm?: string; metadata?: { primary?: boolean } }>;
+  locales?: Array<{ value?: string; metadata?: { primary?: boolean } }>;
+  photos?: Array<{ url?: string; metadata?: { primary?: boolean } }>;
+};
+
+/** Subset of the Facebook Graph `me` response we consume. */
+type FacebookProfile = {
+  id?: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  middle_name?: string;
+  email?: string;
+  email_verified?: boolean | string;
+  birthday?: string;
+  gender?: string;
+  locale?: string;
+  picture?: { data?: { url?: string; is_silhouette?: boolean } };
 };
 
 @Injectable()
@@ -227,13 +285,7 @@ export class WebsiteAuthService {
 
   /** Sign in (or auto-register) via a verified Google identity. */
   async googleSignIn(accessToken: string): Promise<TokenPair> {
-    const info = await this.fetchGoogleUserInfo(accessToken);
-    return this.oauthSignIn({
-      provider: 'google',
-      providerUserId: info.id,
-      email: info.email ?? null,
-      name: info.name ?? null,
-    });
+    return this.oauthSignIn(await this.fetchGoogleUserInfo(accessToken));
   }
 
   /**
@@ -243,13 +295,7 @@ export class WebsiteAuthService {
    * audience must match our web OAuth client (GOOGLE_WEB_CLIENT_ID).
    */
   async googleSignInWithIdToken(idToken: string): Promise<TokenPair> {
-    const info = await this.verifyGoogleIdToken(idToken);
-    return this.oauthSignIn({
-      provider: 'google',
-      providerUserId: info.sub,
-      email: info.email ?? null,
-      name: info.name ?? null,
-    });
+    return this.oauthSignIn(await this.googleProfileFromIdToken(idToken));
   }
 
   /** Web OAuth client the app sets as Credential Manager `serverClientId`. */
@@ -267,7 +313,7 @@ export class WebsiteAuthService {
    */
   private async verifyGoogleIdToken(
     idToken: string,
-  ): Promise<{ sub: string; email?: string; name?: string }> {
+  ): Promise<GoogleProfileClaims & { sub: string }> {
     let response: Response;
     try {
       response = await fetch(
@@ -313,8 +359,41 @@ export class WebsiteAuthService {
       (data.email_verified === true || data.email_verified === 'true')
         ? data.email
         : undefined;
-    const name = typeof data.name === 'string' ? data.name : undefined;
-    return { sub, email, name };
+    return {
+      sub,
+      email,
+      name: WebsiteAuthService.text(data.name),
+      given_name: WebsiteAuthService.text(data.given_name),
+      family_name: WebsiteAuthService.text(data.family_name),
+      picture: WebsiteAuthService.text(data.picture),
+      locale: WebsiteAuthService.text(data.locale),
+    };
+  }
+
+  /** Map verified Google ID-token claims onto the normalised OAuth profile. */
+  private googleProfileFromClaims(
+    claims: GoogleProfileClaims & { sub: string },
+  ): OAuthUserInfo {
+    const email = WebsiteAuthService.text(claims.email);
+    const given = WebsiteAuthService.text(claims.given_name);
+    const family = WebsiteAuthService.text(claims.family_name);
+    const display = WebsiteAuthService.text(claims.name);
+    const split = WebsiteAuthService.splitName(display);
+    return {
+      provider: 'google',
+      providerUserId: claims.sub,
+      email,
+      emailVerified: Boolean(email),
+      name: display,
+      firstName: given ?? split.firstName,
+      lastName: family ?? split.lastName,
+      pictureUrl: WebsiteAuthService.text(claims.picture),
+      locale: WebsiteAuthService.text(claims.locale),
+    };
+  }
+
+  private async googleProfileFromIdToken(idToken: string): Promise<OAuthUserInfo> {
+    return this.googleProfileFromClaims(await this.verifyGoogleIdToken(idToken));
   }
 
   /**
@@ -331,23 +410,10 @@ export class WebsiteAuthService {
     if (!payload.idToken && !payload.accessToken) {
       throw new BadRequestException('Provide a Google accessToken or idToken');
     }
-    const info: { id?: string; sub?: string; email?: string; name?: string } =
-      payload.idToken
-        ? { id: undefined, ...(await this.verifyGoogleIdToken(payload.idToken)) }
-        : await this.fetchGoogleUserInfo(payload.accessToken as string);
-    const providerUserId = info.sub ?? info.id ?? '';
-    if (!providerUserId) {
-      throw new UnauthorizedException('Google account has no identifier');
-    }
-    return this.oauthSignIn(
-      {
-        provider: 'google',
-        providerUserId,
-        email: info.email ?? null,
-        name: info.name ?? null,
-      },
-      channel,
-    );
+    const info = payload.idToken
+      ? await this.googleProfileFromIdToken(payload.idToken)
+      : await this.fetchGoogleUserInfo(payload.accessToken as string);
+    return this.oauthSignIn(info, channel);
   }
 
   /** See oauthGoogleSignInForChannel — Facebook access-token variant. */
@@ -355,32 +421,20 @@ export class WebsiteAuthService {
     accessToken: string,
     channel: OAuthChannel,
   ): Promise<TokenPair> {
-    const info = await this.fetchFacebookUserInfo(accessToken);
-    return this.oauthSignIn(
-      {
-        provider: 'facebook',
-        providerUserId: info.id,
-        email: info.email ?? null,
-        name: info.name ?? null,
-      },
-      channel,
-    );
+    return this.oauthSignIn(await this.fetchFacebookUserInfo(accessToken), channel);
   }
 
   /** Sign in (or auto-register) via a verified Facebook identity. */
   async facebookSignIn(accessToken: string): Promise<TokenPair> {
-    const info = await this.fetchFacebookUserInfo(accessToken);
-    return this.oauthSignIn({
-      provider: 'facebook',
-      providerUserId: info.id,
-      email: info.email ?? null,
-      name: info.name ?? null,
-    });
+    return this.oauthSignIn(await this.fetchFacebookUserInfo(accessToken));
   }
 
-  private async fetchGoogleUserInfo(
-    accessToken: string,
-  ): Promise<{ id: string; email?: string; name?: string }> {
+  /**
+   * Full Google profile for an access token: the OIDC userinfo claims
+   * (name parts, photo, locale) plus, when the token carries the broader
+   * People scopes, birthday / gender / phone from the People API.
+   */
+  private async fetchGoogleUserInfo(accessToken: string): Promise<OAuthUserInfo> {
     let response: Response;
     try {
       response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -393,49 +447,207 @@ export class WebsiteAuthService {
     if (!response.ok) {
       throw new UnauthorizedException('Invalid Google token');
     }
-    const data = (await response.json()) as {
-      sub?: string;
-      email?: string;
-      name?: string;
-    };
-    if (!data.sub) {
+    const data = (await response.json()) as GoogleProfileClaims;
+    const providerUserId = WebsiteAuthService.text(data.sub);
+    if (!providerUserId) {
       throw new UnauthorizedException('Google account has no identifier');
     }
-    return { id: data.sub, email: data.email, name: data.name };
-  }
 
-  private async fetchFacebookUserInfo(
-    accessToken: string,
-  ): Promise<{ id: string; email?: string; name?: string }> {
-    let response: Response;
-    try {
-      const params = new URLSearchParams({
-        fields: 'id,name,email',
-        access_token: accessToken,
-      });
-      response = await fetch(`https://graph.facebook.com/me?${params.toString()}`);
-    } catch (error) {
-      this.logger.warn(`Facebook graph request failed: ${String(error)}`);
-      throw new UnauthorizedException('Could not verify Facebook account');
-    }
-    if (!response.ok) {
-      throw new UnauthorizedException('Invalid Facebook token');
-    }
-    const data = (await response.json()) as {
-      id?: string;
-      email?: string;
-      name?: string;
-    };
-    if (!data.id) {
-      throw new UnauthorizedException('Facebook account has no identifier');
-    }
-    return { id: data.id, email: data.email, name: data.name };
+    const profile = this.googleProfileFromClaims({
+      ...data,
+      sub: providerUserId,
+      // Drop the address only when Google explicitly says it is unverified.
+      email:
+        data.email_verified === false || data.email_verified === 'false'
+          ? undefined
+          : data.email,
+    });
+
+    // Best effort: these claims come from a different API and are simply
+    // absent when the client did not request the matching scopes.
+    const extended = await this.fetchGooglePeopleProfile(accessToken);
+    return { ...profile, ...extended };
   }
 
   /**
-   * Resolve an OAuth identity to a local account. Lookup order: verified
-   * email, then the provider-linked username. Auto-registers when no account
-   * exists yet. Tokens are issued exactly like a password login.
+   * Extended Google profile via the People API. Requires the `user.birthday.read`
+   * (and friends) scopes; tokens issued for plain openid/email/profile get a
+   * 403 here, which is expected and never fails the sign-in.
+   */
+  private async fetchGooglePeopleProfile(
+    accessToken: string,
+  ): Promise<Partial<OAuthUserInfo>> {
+    const personFields = 'names,birthdays,genders,phoneNumbers,locales,photos';
+    try {
+      const response = await fetch(
+        `https://people.googleapis.com/v1/people/me?personFields=${personFields}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!response.ok) {
+        this.logger.debug(
+          `Google People API returned ${response.status}; skipping extended profile`,
+        );
+        return {};
+      }
+      const person = (await response.json()) as GooglePerson;
+      const name = WebsiteAuthService.primary(person.names);
+      const birthday = WebsiteAuthService.primary(
+        // A birthday without a year cannot become a date of birth.
+        person.birthdays?.filter((entry) => entry.date?.year),
+      )?.date;
+      const gender = WebsiteAuthService.primary(person.genders);
+      const phone = WebsiteAuthService.primary(person.phoneNumbers);
+      const locale = WebsiteAuthService.primary(person.locales);
+      const photo = WebsiteAuthService.primary(person.photos);
+
+      return WebsiteAuthService.compact({
+        name: WebsiteAuthService.text(name?.displayName),
+        firstName: WebsiteAuthService.text(name?.givenName),
+        lastName: WebsiteAuthService.text(name?.familyName),
+        dateOfBirth: WebsiteAuthService.formatDate(
+          birthday?.year,
+          birthday?.month,
+          birthday?.day,
+        ),
+        gender: WebsiteAuthService.text(gender?.formattedValue ?? gender?.value),
+        phone: WebsiteAuthService.text(phone?.canonicalForm ?? phone?.value),
+        locale: WebsiteAuthService.text(locale?.value),
+        pictureUrl: WebsiteAuthService.text(photo?.url),
+      });
+    } catch (error) {
+      this.logger.debug(`Google People API request failed: ${String(error)}`);
+      return {};
+    }
+  }
+
+  /**
+   * Full Facebook profile. `birthday` and `gender` need extra permissions many
+   * apps are not approved for, and Facebook rejects the whole query when a
+   * field is unavailable — so fall back to the always-available field set.
+   */
+  private async fetchFacebookUserInfo(
+    accessToken: string,
+  ): Promise<OAuthUserInfo> {
+    const baseFields =
+      'id,name,first_name,last_name,email,email_verified,locale,picture.type(large)';
+    const data =
+      (await this.graphRequest(`${baseFields},birthday,gender`, accessToken)) ??
+      (await this.graphRequest(baseFields, accessToken));
+    if (!data) {
+      throw new UnauthorizedException('Invalid Facebook token');
+    }
+    const providerUserId = WebsiteAuthService.text(data.id);
+    if (!providerUserId) {
+      throw new UnauthorizedException('Facebook account has no identifier');
+    }
+
+    const email =
+      data.email_verified === false || data.email_verified === 'false'
+        ? null
+        : WebsiteAuthService.text(data.email);
+    const split = WebsiteAuthService.splitName(data.name);
+    return {
+      provider: 'facebook',
+      providerUserId,
+      email,
+      emailVerified: Boolean(email),
+      name: WebsiteAuthService.text(data.name),
+      firstName: WebsiteAuthService.text(data.first_name) ?? split.firstName,
+      lastName: WebsiteAuthService.text(data.last_name) ?? split.lastName,
+      pictureUrl: WebsiteAuthService.text(data.picture?.data?.url),
+      locale: WebsiteAuthService.text(data.locale),
+      gender: WebsiteAuthService.text(data.gender),
+      dateOfBirth: WebsiteAuthService.normalizeDate(data.birthday),
+    };
+  }
+
+  /** Graph `me` node; resolves null when Facebook rejects the field set. */
+  private async graphRequest(
+    fields: string,
+    accessToken: string,
+  ): Promise<FacebookProfile | null> {
+    try {
+      const params = new URLSearchParams({ fields, access_token: accessToken });
+      const response = await fetch(
+        `https://graph.facebook.com/me?${params.toString()}`,
+      );
+      if (!response.ok) return null;
+      return (await response.json()) as FacebookProfile;
+    } catch (error) {
+      this.logger.warn(`Facebook graph request failed: ${String(error)}`);
+      return null;
+    }
+  }
+
+  private static text(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  private static splitName(
+    name?: string | null,
+  ): { firstName: string | null; lastName: string | null } {
+    const value = WebsiteAuthService.text(name);
+    if (!value) return { firstName: null, lastName: null };
+    const parts = value.split(/\s+/);
+    if (parts.length === 1) return { firstName: parts[0], lastName: null };
+    return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+  }
+
+  /** Provider lists are unordered; prefer the entry flagged primary. */
+  private static primary<T extends { metadata?: { primary?: boolean } }>(
+    items?: T[],
+  ): T | undefined {
+    if (!items?.length) return undefined;
+    return items.find((item) => item.metadata?.primary) ?? items[0];
+  }
+
+  private static compact<T extends Record<string, unknown>>(
+    source: T,
+  ): Partial<T> {
+    return Object.fromEntries(
+      Object.entries(source).filter(([, value]) => value !== null && value !== undefined),
+    ) as Partial<T>;
+  }
+
+  private static formatDate(
+    year?: number,
+    month?: number,
+    day?: number,
+  ): string | null {
+    if (!year || !month || !day) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return date.toISOString().slice(0, 10);
+  }
+
+  /** Normalise ISO / MM/DD/YYYY / Date-like provider values to YYYY-MM-DD. */
+  private static normalizeDate(raw: unknown): string | null {
+    const value = WebsiteAuthService.text(raw);
+    if (!value) return null;
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (iso) return WebsiteAuthService.formatDate(+iso[1], +iso[2], +iso[3]);
+    const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
+    if (us) return WebsiteAuthService.formatDate(+us[3], +us[1], +us[2]);
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+    return null;
+  }
+
+  /**
+   * Resolve an OAuth identity to a local account. Lookup order: the stored
+   * provider link, the legacy `google_<sub>` username, then the verified
+   * email. Auto-registers when no account exists yet and refreshes the profile
+   * columns on every later sign-in. Tokens are issued like a password login.
    */
   private async oauthSignIn(
     info: OAuthUserInfo,
@@ -444,21 +656,12 @@ export class WebsiteAuthService {
     const { organizationId, roleCodes: configuredRoles } =
       this.channelConfig(channel);
 
-    if (info.email) {
-      // Link any existing account role — the verified email is the key.
-      const byEmail = await this.userRepository.findByEmail(
-        info.email.toLowerCase(),
-        organizationId,
-      );
-      if (byEmail) return this.issueForUser(byEmail);
+    const existing = await this.findOAuthAccount(info, organizationId);
+    if (existing) {
+      const synced = this.syncProfile(existing, info);
+      const saved = synced ? await this.userRepository.update(synced) : existing;
+      return this.issueForUser(saved);
     }
-
-    const username = `${info.provider}_${info.providerUserId}`;
-    const existing = await this.userRepository.findByUsername(
-      username,
-      organizationId,
-    );
-    if (existing) return this.issueForUser(existing);
 
     const roles = await this.roleRepository.listByCodes(
       configuredRoles,
@@ -470,22 +673,175 @@ export class WebsiteAuthService {
       );
     }
 
-    const passwordHash = await this.passwordHasher.hash(randomUUID());
+    // The handle is built from the person's own details instead of the opaque
+    // provider subject so staff can recognise the account.
+    const username = await this.uniqueUsername(
+      this.usernameBase(info),
+      organizationId,
+    );
     const user = new User(
       randomUUID(),
       organizationId,
       null,
       username,
-      passwordHash,
+      await this.oauthPasswordHash(),
       true,
       configuredRoles,
       roles,
-      undefined,
+      info.phone ?? undefined,
       info.email ?? undefined,
+      undefined,
+      this.profileFromInfo(info),
     );
     await this.userRepository.create(user);
     this.logger.log(`Created ${info.provider} user ${username} (${channel})`);
     return this.issueForUser(user);
+  }
+
+  /** Match an existing account for a provider identity, most specific first. */
+  private async findOAuthAccount(
+    info: OAuthUserInfo,
+    organizationId: string,
+  ): Promise<User | null> {
+    const linked = await this.userRepository.findByOAuthProvider(
+      info.provider,
+      info.providerUserId,
+      organizationId,
+    );
+    if (linked) return linked;
+
+    // Accounts registered before the provider link was persisted.
+    const legacy = await this.userRepository.findByUsername(
+      `${info.provider}_${info.providerUserId}`,
+      organizationId,
+    );
+    if (legacy) return legacy;
+
+    if (info.email) {
+      // Link any existing account role — the verified email is the key.
+      return this.userRepository.findByEmail(
+        info.email.toLowerCase(),
+        organizationId,
+      );
+    }
+    return null;
+  }
+
+  /**
+   * OAuth accounts get a random, never-revealed password so the credential
+   * column is populated; entry is through the provider (or a password reset).
+   */
+  private async oauthPasswordHash(): Promise<string> {
+    return this.passwordHasher.hash(randomBytes(32).toString('base64url'));
+  }
+
+  /** Profile columns for a brand-new OAuth account. */
+  private profileFromInfo(info: OAuthUserInfo): UserProfile {
+    const fullName =
+      [info.firstName, info.lastName].filter(Boolean).join(' ') || info.name;
+    return {
+      firstName: info.firstName ?? null,
+      lastName: info.lastName ?? null,
+      displayName: fullName ?? null,
+      dateOfBirth: info.dateOfBirth ?? null,
+      gender: info.gender ?? null,
+      pictureUrl: info.pictureUrl ?? null,
+      locale: info.locale ?? null,
+      oauthProvider: info.provider,
+      oauthProviderId: info.providerUserId,
+      emailVerifiedAt: info.email && info.emailVerified !== false ? new Date() : null,
+    };
+  }
+
+  /**
+   * Fill blank profile columns from the provider and persist the result.
+   * Existing values always win so a later sign-in never overwrites edits made
+   * in the admin UI. Returns the user only when something changed.
+   */
+  private syncProfile(user: User, info: OAuthUserInfo): User | null {
+    const current: UserProfile = { ...(user.profile ?? {}) };
+    const next: UserProfile = { ...current };
+    const fill = (key: keyof UserProfile, value: string | null | undefined) => {
+      const existing = next[key];
+      const filled = typeof existing === 'string' && existing.trim().length > 0;
+      if (value && !filled) (next[key] as string) = value;
+    };
+
+    fill('firstName', info.firstName);
+    fill('lastName', info.lastName);
+    fill('displayName', info.name);
+    fill('dateOfBirth', info.dateOfBirth);
+    fill('gender', info.gender);
+    fill('pictureUrl', info.pictureUrl);
+    fill('locale', info.locale);
+    // The provider link is authoritative for this identity.
+    fill('oauthProvider', info.provider);
+    fill('oauthProviderId', info.providerUserId);
+    if (!next.emailVerifiedAt && info.email && info.emailVerified !== false) {
+      next.emailVerifiedAt = new Date();
+    }
+    if (!next.displayName) {
+      const combined = [next.firstName, next.lastName]
+        .filter(Boolean)
+        .join(' ');
+      if (combined) next.displayName = combined;
+    }
+
+    const phone = !user.phone && info.phone ? info.phone : user.phone;
+    const changed =
+      phone !== user.phone ||
+      (Object.keys(next) as (keyof UserProfile)[]).some(
+        (key) => next[key] !== current[key],
+      );
+    if (!changed) return null;
+
+    user.profile = next;
+    user.phone = phone;
+    return user;
+  }
+
+  /** Username stem from the provider profile: full name, then email. */
+  private usernameBase(info: OAuthUserInfo): string {
+    const candidates = [
+      [info.firstName, info.lastName].filter(Boolean).join('.'),
+      info.email ? info.email.split('@')[0] : '',
+      info.name ?? '',
+      `${info.provider}.${info.providerUserId}`,
+    ];
+    for (const candidate of candidates) {
+      const slug = WebsiteAuthService.slug(candidate);
+      if (slug) return slug;
+    }
+    return `user.${randomUUID().slice(0, 8)}`;
+  }
+
+  /** Lowercase handle: accents folded, everything else collapsed to dots. */
+  private static slug(value?: string | null): string {
+    if (!value) return '';
+    return value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '')
+      .toLowerCase()
+      .slice(0, 32)
+      .replace(/\.+$/g, '');
+  }
+
+  /** Keep the derived username unique inside the org (appends 2, 3, …). */
+  private async uniqueUsername(
+    base: string,
+    organizationId: string,
+  ): Promise<string> {
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      const candidate = attempt === 1 ? base : `${base}${attempt}`;
+      const taken = await this.userRepository.findByUsername(
+        candidate,
+        organizationId,
+      );
+      if (!taken) return candidate;
+    }
+    return `${base}.${randomUUID().slice(0, 8)}`;
   }
 
   private async findOrCreateWebsiteUserByPhone(phone: string): Promise<User> {

@@ -40,6 +40,19 @@ export class TypeormUserRepository implements UserRepository {
     return item ? IdentityMapper.toDomainUser(item) : null;
   }
 
+  async findByOAuthProvider(
+    provider: string,
+    providerUserId: string,
+    organizationId?: string | null,
+  ): Promise<User | null> {
+    const where: any = { oauthProvider: provider, oauthProviderId: providerUserId };
+    if (organizationId !== undefined) {
+      where.organizationId = organizationId;
+    }
+    const item = await this.userRepository.findOne({ where, relations: { roles: true } });
+    return item ? IdentityMapper.toDomainUser(item) : null;
+  }
+
   async findById(id: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { id };
     if (organizationId !== undefined) {
@@ -60,6 +73,7 @@ export class TypeormUserRepository implements UserRepository {
       phone: user.phone,
       email: user.email,
       loginTimeoutMinutes: user.loginTimeoutMinutes ?? null,
+      ...IdentityMapper.profileColumns(user.profile),
       roles: user.roles,
     });
 
@@ -85,6 +99,7 @@ export class TypeormUserRepository implements UserRepository {
     existing.phone = user.phone;
     existing.email = user.email;
     existing.loginTimeoutMinutes = user.loginTimeoutMinutes ?? null;
+    Object.assign(existing, IdentityMapper.profileColumns(user.profile));
     existing.roles = user.roles;
 
     const saved = await this.userRepository.save(existing);

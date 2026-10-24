@@ -28,6 +28,7 @@ describe('LoginUseCase', () => {
       findByUsername: jest.fn(),
       findByPhone: jest.fn(),
       findByEmail: jest.fn(),
+      findByOAuthProvider: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
