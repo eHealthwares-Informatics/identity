@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { ORG_REPOSITORY } from '../../auth/services/identity.di-tokens';
 import type { OrganizationRepository } from '../repositories/organization.repository';
@@ -10,11 +10,17 @@ export class CreateOrganizationUseCase {
   constructor(
     @Inject(ORG_REPOSITORY)
     private readonly organizationRepository: OrganizationRepository,
-  ) {}
+  ) {
+    this.logger = new Logger(CreateOrganizationUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(payload: CreateOrganizationDto): Promise<Organization> {
+    this.logger.log(`Create organization attempt: code=${payload.code} name=${payload.name}`);
     const existing = await this.organizationRepository.findByCode(payload.code);
     if (existing) {
+      this.logger.warn(`Create organization failed: code=${payload.code} already exists`);
       throw new BadRequestException('Organization code already exists');
     }
 
@@ -24,6 +30,8 @@ export class CreateOrganizationUseCase {
       payload.name,
       payload.isActive ?? true,
     );
-    return this.organizationRepository.create(organization);
+    const saved = await this.organizationRepository.create(organization);
+    this.logger.log(`Organization created: id=${saved.id} code=${payload.code}`);
+    return saved;
   }
 }

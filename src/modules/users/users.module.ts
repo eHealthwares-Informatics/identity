@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './controllers/users.controller';
 import { CreateUserUseCase } from './services/create-user.use-case';
+import { EnsureCustomerUserUseCase } from './services/ensure-customer-user.use-case';
 import { UpdateUserUseCase } from './services/update-user.use-case';
 import { DeleteUserUseCase } from './services/delete-user.use-case';
 import { ListUsersUseCase } from './services/list-users.use-case';
@@ -14,6 +15,7 @@ import { AuthModule } from '../auth/auth.module';
   controllers: [UsersController],
   providers: [
     CreateUserUseCase,
+    EnsureCustomerUserUseCase,
     UpdateUserUseCase,
     DeleteUserUseCase,
     ListUsersUseCase,

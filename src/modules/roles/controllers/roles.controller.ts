@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Logger, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { UpdateRoleDto } from '../dto/update-role.dto';
@@ -29,14 +29,29 @@ export class RolesController {
     private readonly getRoleUseCase: GetRoleUseCase,
     private readonly updateRoleUseCase: UpdateRoleUseCase,
     private readonly deleteRoleUseCase: DeleteRoleUseCase,
-  ) {}
+  ) {
+    this.logger = new Logger(RolesController.name);
+  }
+
+  private readonly logger: Logger;
 
   @Post()
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Create a role' })
   async create(@Body() payload: CreateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
-    const role = await this.createRoleUseCase.execute(payload, currentUser.organizationId ?? '');
-    return toResponse(role);
+    this.logger.log(
+      `Create role attempt: code=${payload.code} organizationId=${currentUser.organizationId ?? null} actor=${currentUser.sub}`,
+    );
+    try {
+      const role = await this.createRoleUseCase.execute(payload, currentUser.organizationId ?? '');
+      this.logger.log(`Role created: id=${role.id} code=${payload.code} organizationId=${currentUser.organizationId ?? null}`);
+      return toResponse(role);
+    } catch (error) {
+      this.logger.warn(
+        `Create role failed: code=${payload.code} organizationId=${currentUser.organizationId ?? null} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Get()
@@ -70,6 +85,7 @@ export class RolesController {
   @Get('catalog')
   @ApiOperation({ summary: 'List requestable roles (codes + names) for any authenticated user' })
   async catalog(@CurrentUser() currentUser: RequestUser): Promise<Array<{ code: string; name: string }>> {
+    this.logger.debug(`Role catalog requested: organizationId=${currentUser.organizationId ?? null} user=${currentUser.sub}`);
     const roles = await this.listRolesUseCase.execute(currentUser.organizationId ?? '');
     return roles.map((r) => ({ code: r.code, name: r.name }));
   }
@@ -78,35 +94,64 @@ export class RolesController {
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Get a role by ID' })
   async getById(@Param('id') id: string, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
+    this.logger.debug(`Get role: id=${id} organizationId=${currentUser.organizationId ?? null}`);
     const role = await this.getRoleUseCase.execute(id, currentUser.organizationId ?? '');
     return toResponse(role);
   }
 
-  // Role editing is superadmin-only (rxsoft#781) — non-superadmins get 403.
   @Put(':id')
   @Roles('super_admin')
   @ApiOperation({ summary: 'Update a role' })
   async update(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
-    const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
-    return toResponse(role);
+    this.logger.log(
+      `Update role attempt: id=${id} organizationId=${currentUser.organizationId ?? null} actor=${currentUser.sub}`,
+    );
+    try {
+      const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
+      this.logger.log(`Role updated: id=${id} organizationId=${currentUser.organizationId ?? null}`);
+      return toResponse(role);
+    } catch (error) {
+      this.logger.warn(
+        `Update role failed: id=${id} organizationId=${currentUser.organizationId ?? null} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
-  // The role editor's edit modal submits PATCH (the data-page update mutation),
-  // and the UC documents `PATCH /roles/{id}`. The rxsoft proxy maps PATCH → the
-  // PUT above, but identity's own API 404'd a direct PATCH — the same footgun as
-  // the coupons route (rxsoft-qa#799). Both verbs now hit the same use case.
   @Patch(':id')
   @Roles('super_admin')
   @ApiOperation({ summary: 'Update a role (PATCH alias of PUT)' })
   async patch(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
-    const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
-    return toResponse(role);
+    this.logger.log(
+      `Patch role attempt: id=${id} organizationId=${currentUser.organizationId ?? null} actor=${currentUser.sub}`,
+    );
+    try {
+      const role = await this.updateRoleUseCase.execute(id, payload, currentUser.organizationId ?? '');
+      this.logger.log(`Role patched: id=${id} organizationId=${currentUser.organizationId ?? null}`);
+      return toResponse(role);
+    } catch (error) {
+      this.logger.warn(
+        `Patch role failed: id=${id} organizationId=${currentUser.organizationId ?? null} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Delete(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Delete a role' })
   async delete(@Param('id') id: string, @CurrentUser() currentUser: RequestUser): Promise<void> {
-    await this.deleteRoleUseCase.execute(id, currentUser.organizationId ?? '');
+    this.logger.log(
+      `Delete role attempt: id=${id} organizationId=${currentUser.organizationId ?? null} actor=${currentUser.sub}`,
+    );
+    try {
+      await this.deleteRoleUseCase.execute(id, currentUser.organizationId ?? '');
+      this.logger.log(`Role deleted: id=${id} organizationId=${currentUser.organizationId ?? null}`);
+    } catch (error) {
+      this.logger.warn(
+        `Delete role failed: id=${id} organizationId=${currentUser.organizationId ?? null} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 }
