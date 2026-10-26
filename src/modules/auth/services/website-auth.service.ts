@@ -556,7 +556,7 @@ export class WebsiteAuthService {
       provider: 'facebook',
       providerUserId,
       email,
-      emailVerified: Boolean(email),
+      emailVerified: false,
       name: WebsiteAuthService.text(data.name),
       firstName: WebsiteAuthService.text(data.first_name) ?? split.firstName,
       lastName: WebsiteAuthService.text(data.last_name) ?? split.lastName,
