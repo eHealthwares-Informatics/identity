@@ -1,4 +1,4 @@
-import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
+import { Injectable, Logger, NestMiddleware, LogLevel } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
 /**
@@ -11,6 +11,26 @@ import { Request, Response, NextFunction } from 'express';
 @Injectable()
 export class HttpRequestLoggerMiddleware implements NestMiddleware {
   private readonly logger = new Logger(HttpRequestLoggerMiddleware.name);
+  private readonly logLevel: LogLevel;
+  private readonly enabledLevels: LogLevel[];
+
+  constructor(logLevel?: string) {
+    this.logLevel = (logLevel ?? process.env.LOG_LEVEL ?? 'log').toLowerCase() as LogLevel;
+    this.enabledLevels = this.getEnabledLevels(this.logLevel);
+    this.logger.log(`HttpRequestLoggerMiddleware log level: ${this.logLevel}`);
+  }
+
+  private getEnabledLevels(level: LogLevel): LogLevel[] {
+    const levels: LogLevel[] = ['error', 'warn', 'log'];
+    if (level === 'debug' || level === 'verbose') {
+      levels.push('debug', 'verbose');
+    }
+    return levels;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    return this.enabledLevels.includes(level);
+  }
 
   use(req: Request, res: Response, next: NextFunction): void {
     const { method, originalUrl, ip } = req;
@@ -29,11 +49,11 @@ export class HttpRequestLoggerMiddleware implements NestMiddleware {
       const message = `${method} ${originalUrl} -> ${statusCode} [${duration}ms] user=${user} ip=${ip}`;
 
       if (statusCode >= 500) {
-        this.logger.error(message);
+        if (this.shouldLog('error')) this.logger.error(message);
       } else if (statusCode >= 400) {
-        this.logger.warn(message);
+        if (this.shouldLog('warn')) this.logger.warn(message);
       } else {
-        this.logger.log(message);
+        if (this.shouldLog('log')) this.logger.log(message);
       }
     });
 

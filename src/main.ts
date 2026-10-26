@@ -26,7 +26,7 @@ async function bootstrap() {
     bufferLogs: true,
   });
 
-  const requestLogger = new HttpRequestLoggerMiddleware();
+  const requestLogger = new HttpRequestLoggerMiddleware(logLevel);
   app.use((req, res, next) => requestLogger.use(req, res, next));
 
   app.enableCors();
