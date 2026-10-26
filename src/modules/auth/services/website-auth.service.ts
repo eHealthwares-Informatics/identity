@@ -537,6 +537,8 @@ export class WebsiteAuthService {
       (await this.graphRequest(baseFields, accessToken));
     
     if (!data) {
+            this.logger.debug(`Invalid facebook token, AccessToken: ${accessToken}`);
+
       throw new UnauthorizedException(data,'Invalid Facebook token - ' + accessToken);
     }
     const providerUserId = WebsiteAuthService.text(data.id);
