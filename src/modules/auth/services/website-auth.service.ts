@@ -302,7 +302,7 @@ export class WebsiteAuthService {
   private googleWebClientId(): string {
     return this.configService.get<string>(
       'GOOGLE_WEB_CLIENT_ID',
-      '763036387173-jml5o3iauj2ms5269dqf7qq24gplh6mq.apps.googleusercontent.com',
+      '268639792212-nv4dh7fmmdur1eac3ujtocg0lvpfn2kr.apps.googleusercontent.com',
     );
   }
 
