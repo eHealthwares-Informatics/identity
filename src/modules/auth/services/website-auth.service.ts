@@ -298,12 +298,21 @@ export class WebsiteAuthService {
     return this.oauthSignIn(await this.googleProfileFromIdToken(idToken));
   }
 
-  /** Web OAuth client the app sets as Credential Manager `serverClientId`. */
-  private googleWebClientId(): string {
-    return this.configService.get<string>(
+  /**
+   * Web OAuth client(s) the app sets as Credential Manager `serverClientId`.
+   * Comma-separated to allow more than one Google Cloud project during
+   * migration (each Android OAuth client lives alongside its web client).
+   */
+  private googleWebClientIds(): string[] {
+    const raw = this.configService.get<string>(
       'GOOGLE_WEB_CLIENT_ID',
-      '268639792212-nv4dh7fmmdur1eac3ujtocg0lvpfn2kr.apps.googleusercontent.com',
+      '268639792212-nv4dh7fmmdur1eac3ujtocg0lvpfn2kr.apps.googleusercontent.com,' +
+        '763036387173-jml5o3iauj2ms5269dqf7qq24gplh6mq.apps.googleusercontent.com',
     );
+    return raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
   }
 
   /**
@@ -331,7 +340,8 @@ export class WebsiteAuthService {
     const data = (await response.json()) as Record<string, unknown>;
 
     const aud = Array.isArray(data.aud) ? data.aud : [data.aud];
-    if (!aud.includes(this.googleWebClientId())) {
+    const allowedAudiences = this.googleWebClientIds();
+    if (!aud.some((value) => allowedAudiences.includes(String(value)))) {
       throw new UnauthorizedException(
         'Google token was issued for a different app',
       );
