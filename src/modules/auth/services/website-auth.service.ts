@@ -302,7 +302,7 @@ export class WebsiteAuthService {
   private googleWebClientId(): string {
     return this.configService.get<string>(
       'GOOGLE_WEB_CLIENT_ID',
-      '763036387173-jml5o3iauj2ms5269dqf7qq24gplh6mq.apps.googleusercontent.com',
+      '268639792212-nv4dh7fmmdur1eac3ujtocg0lvpfn2kr.apps.googleusercontent.com',
     );
   }
 
@@ -314,6 +314,7 @@ export class WebsiteAuthService {
   private async verifyGoogleIdToken(
     idToken: string,
   ): Promise<GoogleProfileClaims & { sub: string }> {
+    this.logger.debug(`Google tokeninfo request initiated for token`);
     let response: Response;
     try {
       response = await fetch(
@@ -324,6 +325,7 @@ export class WebsiteAuthService {
       throw new UnauthorizedException('Could not verify Google account');
     }
     if (!response.ok) {
+      this.logger.debug(`Google tokeninfo returned ${response.status}`);
       throw new UnauthorizedException('Invalid Google token');
     }
     const data = (await response.json()) as Record<string, unknown>;
@@ -437,6 +439,7 @@ export class WebsiteAuthService {
   private async fetchGoogleUserInfo(accessToken: string): Promise<OAuthUserInfo> {
     let response: Response;
     try {
+      this.logger.debug(`Google userinfo request initiated with access token`);
       response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -445,6 +448,7 @@ export class WebsiteAuthService {
       throw new UnauthorizedException('Could not verify Google account');
     }
     if (!response.ok) {
+      this.logger.debug(`Google userinfo returned ${response.status}`);
       throw new UnauthorizedException('Invalid Google token');
     }
     const data = (await response.json()) as GoogleProfileClaims;
@@ -479,14 +483,13 @@ export class WebsiteAuthService {
   ): Promise<Partial<OAuthUserInfo>> {
     const personFields = 'names,birthdays,genders,phoneNumbers,locales,photos';
     try {
+      this.logger.debug(`Google People API request initiated, fields: ${personFields}`);
       const response = await fetch(
         `https://people.googleapis.com/v1/people/me?personFields=${personFields}`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
       );
       if (!response.ok) {
-        this.logger.debug(
-          `Google People API returned ${response.status}; skipping extended profile`,
-        );
+        this.logger.debug(`Google People API returned ${response.status}; skipping extended profile`);
         return {};
       }
       const person = (await response.json()) as GooglePerson;
@@ -530,16 +533,16 @@ export class WebsiteAuthService {
   private async fetchFacebookUserInfo(
     accessToken: string,
   ): Promise<OAuthUserInfo> {
+    this.logger.debug(`Facebook userinfo request initiated, access token length: ${accessToken?.length ?? 0}`);
     const baseFields =
-      'id,name,first_name,last_name,email,email_verified,locale,picture.type(large)';
+      'id,name,first_name,last_name,email,locale,picture.type(large)';
     const data =
-      (await this.graphRequest(`${baseFields},birthday,gender`, accessToken)) ??
+      (await this.graphRequest(`${baseFields}`, accessToken)) ??
       (await this.graphRequest(baseFields, accessToken));
-    
+  
     if (!data) {
-            this.logger.debug(`Invalid facebook token, AccessToken: ${accessToken}`);
-
-      throw new UnauthorizedException(data,'Invalid Facebook token - ' + accessToken);
+      this.logger.debug(`Invalid facebook token, AccessToken length: ${accessToken?.length ?? 0}`);
+      throw new UnauthorizedException('Invalid Facebook token - ' + accessToken);
     }
     const providerUserId = WebsiteAuthService.text(data.id);
     if (!providerUserId) {
@@ -555,7 +558,7 @@ export class WebsiteAuthService {
       provider: 'facebook',
       providerUserId,
       email,
-      emailVerified: Boolean(email),
+      emailVerified: false,
       name: WebsiteAuthService.text(data.name),
       firstName: WebsiteAuthService.text(data.first_name) ?? split.firstName,
       lastName: WebsiteAuthService.text(data.last_name) ?? split.lastName,
@@ -572,11 +575,15 @@ export class WebsiteAuthService {
     accessToken: string,
   ): Promise<FacebookProfile | null> {
     try {
+      this.logger.debug(`Facebook graph request initiated, fields: ${fields}`);
       const params = new URLSearchParams({ fields, access_token: accessToken });
       const response = await fetch(
         `https://graph.facebook.com/me?${params.toString()}`,
       );
-      if (!response.ok) return null;
+      if (!response.ok) {
+        this.logger.debug(`Facebook graph returned ${response.status}`);
+        return null;
+      }
       return (await response.json()) as FacebookProfile;
     } catch (error) {
       this.logger.warn(`Facebook graph request failed: ${String(error)}`);
