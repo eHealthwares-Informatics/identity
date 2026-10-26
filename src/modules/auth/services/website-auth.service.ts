@@ -503,7 +503,7 @@ export class WebsiteAuthService {
       const locale = WebsiteAuthService.primary(person.locales);
       const photo = WebsiteAuthService.primary(person.photos);
 
-      return WebsiteAuthService.compact({
+      const compact = WebsiteAuthService.compact({
         name: WebsiteAuthService.text(name?.displayName),
         firstName: WebsiteAuthService.text(name?.givenName),
         lastName: WebsiteAuthService.text(name?.familyName),
@@ -517,8 +517,10 @@ export class WebsiteAuthService {
         locale: WebsiteAuthService.text(locale?.value),
         pictureUrl: WebsiteAuthService.text(photo?.url),
       });
+      return compact
     } catch (error) {
-      this.logger.debug(`Google People API request failed: ${String(error)}`);
+      this.logger.debug(`Google People API request failed: ${String(error)}, AccessToken: ${accessToken}`);
+      throw new UnauthorizedException('Invalid Google token - ' + accessToken);
       return {};
     }
   }
