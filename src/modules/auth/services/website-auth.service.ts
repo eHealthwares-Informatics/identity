@@ -533,9 +533,9 @@ export class WebsiteAuthService {
   ): Promise<OAuthUserInfo> {
     this.logger.debug(`Facebook userinfo request initiated, access token length: ${accessToken?.length ?? 0}`);
     const baseFields =
-      'id,name,first_name,last_name,email,email_verified,locale,picture.type(large)';
+      'id,name,first_name,last_name,email,locale,picture.type(large)';
     const data =
-      (await this.graphRequest(`${baseFields},birthday,gender`, accessToken)) ??
+      (await this.graphRequest(`${baseFields}`, accessToken)) ??
       (await this.graphRequest(baseFields, accessToken));
   
     if (!data) {
