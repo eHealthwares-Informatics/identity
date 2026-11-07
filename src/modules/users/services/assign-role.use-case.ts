@@ -33,6 +33,10 @@ export class AssignRoleUseCase {
 
     if (!user.roleCodes.includes(payload.roleCode)) {
       user.roleCodes.push(payload.roleCode);
+      // The repository persists the resolved role entities (`user.roles`), not
+      // the raw codes. Resolve them here or the assignment is silently dropped
+      // and the user ends up with no permissions (and therefore no modules).
+      user.roles = await this.roleRepository.listByCodes(user.roleCodes, organizationId);
       await this.userRepository.update(user, organizationId);
       this.logger.log(
         `Role assigned: userId=${userId} role=${payload.roleCode} organizationId=${organizationId}`,

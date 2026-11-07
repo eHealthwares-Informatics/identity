@@ -15,4 +15,7 @@ export class RoleResponseDto {
 
   @ApiProperty()
   permissionCodes!: string[];
+
+  @ApiPropertyOptional({ example: 3600 })
+  jwtExpirySeconds?: number | null;
 }

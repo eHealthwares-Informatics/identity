@@ -1,4 +1,12 @@
 /**
+ * Values accepted for `gender` on a user profile. Shared by the DTO validation
+ * and the console form so both stay in sync.
+ */
+export const USER_GENDERS = ['female', 'male', 'other', 'prefer_not_to_say'] as const;
+
+export type UserGender = (typeof USER_GENDERS)[number];
+
+/**
  * Profile attributes collected from an identity provider (Google / Facebook)
  * or the admin UI. Every field is optional: password and OTP sign-ups have no
  * profile data, and providers only return what the user consented to share.
@@ -43,5 +51,13 @@ export class User {
       .join(' ')
       .trim();
     return joined || this.profile.displayName?.trim() || null;
+  }
+
+  /**
+   * Human-facing name for APIs and UI. Falls back to the username so callers
+   * never have to branch on whether a profile was ever filled in.
+   */
+  get name(): string {
+    return this.fullName ?? this.username;
   }
 }

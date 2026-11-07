@@ -172,7 +172,14 @@ describe('WebsiteAuthService — oauthGoogleSignInForChannel', () => {
       'console',
     );
 
-    expect(result).toBe(TOKEN_PAIR);
+    expect(result).toMatchObject(TOKEN_PAIR);
+    // The sign-in response carries the account so the client can render it.
+    expect(result.user).toMatchObject({
+      username: 'alice',
+      // The provider's name claim fills the blank display name on sync.
+      name: 'Alice',
+      email: 'topzy20@gmail.com',
+    });
     expect(harness.userRepository.findByEmail).toHaveBeenCalledWith(
       'topzy20@gmail.com',
       'org-1',
@@ -195,7 +202,8 @@ describe('WebsiteAuthService — oauthGoogleSignInForChannel', () => {
       'console',
     );
 
-    expect(result).toBe(TOKEN_PAIR);
+    expect(result).toMatchObject(TOKEN_PAIR);
+    expect(result.user.username).toBe('newuser');
     const created = harness.userRepository.create.mock.calls[0][0] as User;
     expect(created.organizationId).toBe('console-org');
     expect(created.roleCodes).toEqual(['console_user']);
@@ -477,7 +485,8 @@ describe('WebsiteAuthService — oauthFacebookSignInForChannel', () => {
       'console',
     );
 
-    expect(result).toBe(TOKEN_PAIR);
+    expect(result).toMatchObject(TOKEN_PAIR);
+    expect(result.user.username).toBe('jane');
     expect(harness.userRepository.create).not.toHaveBeenCalled();
   });
 
@@ -493,7 +502,9 @@ describe('WebsiteAuthService — oauthFacebookSignInForChannel', () => {
       'website',
     );
 
-    expect(result).toBe(TOKEN_PAIR);
+    expect(result).toMatchObject(TOKEN_PAIR);
+    // Facebook's name claim is returned with the tokens, ready for the profile.
+    expect(result.user.name).toBe('Newbie');
     const created = harness.userRepository.create.mock.calls[0][0] as User;
     expect(created.organizationId).toBe('shopper-org');
     expect(created.roleCodes).toEqual(['website_user']);
@@ -562,7 +573,7 @@ describe('WebsiteAuthService — oauthFacebookSignInForChannel', () => {
 
     const result = await harness.service.oauthFacebookSignInForChannel('fb-token', 'website');
 
-    expect(result).toBe(TOKEN_PAIR);
+    expect(result).toMatchObject(TOKEN_PAIR);
     expect(calls).toBe(2);
     const created = harness.userRepository.create.mock.calls[0][0] as User;
     expect(created.username).toBe('new.bie');
