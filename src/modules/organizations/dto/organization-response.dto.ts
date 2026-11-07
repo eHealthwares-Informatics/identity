@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class OrganizationResponseDto {
   @ApiProperty()
@@ -12,4 +12,7 @@ export class OrganizationResponseDto {
 
   @ApiProperty()
   isActive!: boolean;
+
+  @ApiPropertyOptional({ example: 'acme.clinic.com' })
+  domain!: string | null;
 }

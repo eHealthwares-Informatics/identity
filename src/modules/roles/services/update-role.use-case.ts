@@ -30,6 +30,8 @@ export class UpdateRoleUseCase {
       payload.name ?? existing.name,
       payload.description ?? existing.description,
       payload.permissionCodes ?? existing.permissionCodes,
+      [],
+      payload.jwtExpirySeconds ?? existing.jwtExpirySeconds,
     );
 
     const saved = await this.roleRepository.update(updated);

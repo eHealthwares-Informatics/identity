@@ -52,6 +52,25 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.sales.sale.create',
       'rxsoft.sales.sale.read',
       'rxsoft.inventory.stock.read',
+      'shop.pos',
+      'shop.pos.dispense',
+    ],
+  },
+  hr_human: {
+    name: 'Human Resource',
+    description: 'Human resource manager — people management',
+    permissions: [
+      'rxsoft.admin.people.read',
+    ],
+  },
+  cashier_admin: {
+    name: 'Cashier Admin',
+    description: 'Cashier administrator — admin access to orders and sales',
+    permissions: [
+      'rxsoft.admin.$module_admin',
+      'rxsoft.sales.$module_admin',
+      'rxsoft.sales.sale.read',
+      'rxsoft.sales.sale.create',
     ],
   },
   pharmacist: {
@@ -65,8 +84,6 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.sales.sale.read',
       'rxsoft.sales.sale.create',
       'rxsoft.reports',
-      'shop.pos',
-      'shop.pos.dispense',
     ],
   },
   pharmacist_assistant: {
@@ -77,8 +94,6 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.inventory.stock.read',
       'rxsoft.sales.sale.read',
       'rxsoft.sales.sale.create',
-      'shop.pos',
-      'shop.pos.dispense',
     ],
   },
   manager: {
@@ -93,6 +108,18 @@ export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
       'rxsoft.receivables.transaction.read',
       'rxsoft.receivables.transaction.create',
       'rxsoft.reports',
+    ],
+  },
+  inventory_manager: {
+    name: 'Inventory Manager',
+    description: 'Inventory manager — stock and purchasing',
+    permissions: [
+      'rxsoft.purchases.order.create',
+      'rxsoft.purchases.order.read',
+      'rxsoft.purchases.order.update',
+      'rxsoft.inventory.stock.read',
+      'rxsoft.inventory.stock.adjust',
+      'rxsoft.inventory.stock.transfer',
     ],
   },
   inventory_clerk: {

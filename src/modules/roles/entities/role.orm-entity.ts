@@ -18,6 +18,9 @@ export class RoleOrmEntity {
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 
+  @Column({ name: 'jwt_expiry_seconds', type: 'int', nullable: true })
+  jwtExpirySeconds: number | null;
+
   @ManyToMany('PermissionOrmEntity', 'roles')
   @JoinTable({
     name: 'role_permissions',

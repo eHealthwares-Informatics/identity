@@ -50,6 +50,7 @@ export class UsersController {
       organizationId: user.organizationId,
       locationId: user.locationId,
       username: user.username,
+      name: user.fullName ?? user.username,
       phone: user.phone,
       email: user.email,
       roles: user.roleCodes ?? [],

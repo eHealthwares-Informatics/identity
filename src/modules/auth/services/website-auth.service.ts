@@ -65,6 +65,32 @@ export type OAuthUserInfo = {
   phone?: string | null;
 };
 
+/**
+ * The account, as the storefront needs to render a profile: identity plus the
+ * biodata collected from the provider (or the admin console). Returned with
+ * every sign-in so the client can greet and display the shopper without a
+ * second round-trip to `/auth/me`.
+ */
+export type WebsiteAuthUser = {
+  sub: string;
+  username: string;
+  /** "First Last", else the provider display name, else the username. */
+  name: string;
+  email: string | null;
+  phone: string | null;
+  organizationId: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  dateOfBirth: string | null;
+  gender: string | null;
+  pictureUrl: string | null;
+  oauthProvider: string | null;
+};
+
+/** Token pair plus the signed-in account. */
+export type WebsiteAuthResult = TokenPair & { user: WebsiteAuthUser };
+
 /** Subset of Google's OIDC userinfo / tokeninfo response we consume. */
 type GoogleProfileClaims = {
   sub?: string;
@@ -246,7 +272,7 @@ export class WebsiteAuthService {
   }
 
   /** Verify the OTP server-side and issue tokens for the phone's account. */
-  async verifyOtpAndSignIn(rawPhone: string, code: string): Promise<TokenPair> {
+  async verifyOtpAndSignIn(rawPhone: string, code: string): Promise<WebsiteAuthResult> {
     const phone = this.normalizePhone(rawPhone);
     const normalizedCode = code.trim();
 
@@ -284,7 +310,7 @@ export class WebsiteAuthService {
   }
 
   /** Sign in (or auto-register) via a verified Google identity. */
-  async googleSignIn(accessToken: string): Promise<TokenPair> {
+  async googleSignIn(accessToken: string): Promise<WebsiteAuthResult> {
     return this.oauthSignIn(await this.fetchGoogleUserInfo(accessToken));
   }
 
@@ -294,7 +320,7 @@ export class WebsiteAuthService {
    * Google. The JWT is verified against Google's tokeninfo endpoint and its
    * audience must match our web OAuth client (GOOGLE_WEB_CLIENT_ID).
    */
-  async googleSignInWithIdToken(idToken: string): Promise<TokenPair> {
+  async googleSignInWithIdToken(idToken: string): Promise<WebsiteAuthResult> {
     return this.oauthSignIn(await this.googleProfileFromIdToken(idToken));
   }
 
@@ -418,7 +444,7 @@ export class WebsiteAuthService {
   async oauthGoogleSignInForChannel(
     payload: { accessToken?: string; idToken?: string },
     channel: OAuthChannel,
-  ): Promise<TokenPair> {
+  ): Promise<WebsiteAuthResult> {
     if (!payload.idToken && !payload.accessToken) {
       throw new BadRequestException('Provide a Google accessToken or idToken');
     }
@@ -432,12 +458,12 @@ export class WebsiteAuthService {
   async oauthFacebookSignInForChannel(
     accessToken: string,
     channel: OAuthChannel,
-  ): Promise<TokenPair> {
+  ): Promise<WebsiteAuthResult> {
     return this.oauthSignIn(await this.fetchFacebookUserInfo(accessToken), channel);
   }
 
   /** Sign in (or auto-register) via a verified Facebook identity. */
-  async facebookSignIn(accessToken: string): Promise<TokenPair> {
+  async facebookSignIn(accessToken: string): Promise<WebsiteAuthResult> {
     return this.oauthSignIn(await this.fetchFacebookUserInfo(accessToken));
   }
 
@@ -546,10 +572,14 @@ export class WebsiteAuthService {
     this.logger.debug(`Facebook userinfo request initiated, access token length: ${accessToken?.length ?? 0}`);
     const baseFields =
       'id,name,first_name,last_name,email,locale,picture.type(large)';
+    // Ask for the biodata too, then retry without it: Graph rejects the whole
+    // query when one field is not approved, and prior denial of birthday/gender
+    // must not fail the sign-in.
+    const extendedFields = `${baseFields},birthday,gender`;
     const data =
-      (await this.graphRequest(`${baseFields}`, accessToken)) ??
+      (await this.graphRequest(extendedFields, accessToken)) ??
       (await this.graphRequest(baseFields, accessToken));
-  
+
     if (!data) {
       this.logger.debug(`Invalid facebook token, AccessToken length: ${accessToken?.length ?? 0}`);
       throw new UnauthorizedException('Invalid Facebook token - ' + accessToken);
@@ -674,7 +704,7 @@ export class WebsiteAuthService {
   private async oauthSignIn(
     info: OAuthUserInfo,
     channel: OAuthChannel = 'website',
-  ): Promise<TokenPair> {
+  ): Promise<WebsiteAuthResult> {
     const { organizationId, roleCodes: configuredRoles } =
       this.channelConfig(channel);
 
@@ -905,7 +935,29 @@ export class WebsiteAuthService {
     return user;
   }
 
-  private async issueForUser(user: User): Promise<TokenPair> {
+  /**
+   * Signed-in account for the response body. Built from the same fields that
+   * go into the token claims, so `/auth/me` and the sign-in response agree.
+   */
+  private authUser(user: User): WebsiteAuthUser {
+    return {
+      sub: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email ?? null,
+      phone: user.phone ?? null,
+      organizationId: user.organizationId ?? null,
+      firstName: user.profile.firstName ?? null,
+      lastName: user.profile.lastName ?? null,
+      displayName: user.profile.displayName ?? null,
+      dateOfBirth: user.profile.dateOfBirth ?? null,
+      gender: user.profile.gender ?? null,
+      pictureUrl: user.profile.pictureUrl ?? null,
+      oauthProvider: user.profile.oauthProvider ?? null,
+    };
+  }
+
+  private async issueForUser(user: User): Promise<WebsiteAuthResult> {
     const roles = user.organizationId
       ? await this.roleRepository.listByCodes(user.roleCodes, user.organizationId)
       : [];
@@ -923,8 +975,16 @@ export class WebsiteAuthService {
         permissions,
         phone: user.phone,
         email: user.email ?? user.id,
+        firstName: user.profile.firstName ?? null,
+        lastName: user.profile.lastName ?? null,
+        displayName: user.profile.displayName ?? null,
+        dateOfBirth: user.profile.dateOfBirth ?? null,
+        gender: user.profile.gender ?? null,
       },
-      user.loginTimeoutMinutes ?? undefined,
+      {
+        loginTimeoutMinutes: user.loginTimeoutMinutes ?? undefined,
+        roleExpirySeconds: await this.computeRoleExpirySeconds(user.roleCodes, user.organizationId),
+      },
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(
@@ -936,6 +996,22 @@ export class WebsiteAuthService {
       new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
     );
 
-    return tokenPair;
+    // OAuth sign-up fills the profile columns from the provider; returning them
+    // here is what lets the app show a real name instead of "Google user".
+    return { ...tokenPair, user: this.authUser(user) };
+  }
+
+  private async computeRoleExpirySeconds(
+    roleCodes: string[],
+    organizationId: string | null,
+  ): Promise<number | undefined> {
+    if (!roleCodes.length || !organizationId) {
+      return undefined;
+    }
+    const roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
+    const expiries = roles
+      .map((r) => r.jwtExpirySeconds)
+      .filter((s) => s != null && s > 0) as number[];
+    return expiries.length > 0 ? Math.max(...expiries) : undefined;
   }
 }

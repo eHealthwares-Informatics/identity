@@ -4,5 +4,6 @@ export class Organization {
     public readonly code: string,
     public readonly name: string,
     public readonly isActive: boolean,
+    public readonly domain: string | null,
   ) {}
 }

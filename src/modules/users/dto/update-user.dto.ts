@@ -1,5 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { USER_GENDERS } from '../domains/user.entity';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'cashier01' })
@@ -44,4 +56,33 @@ export class UpdateUserDto {
   @IsInt()
   @Min(1)
   loginTimeoutMinutes?: number | null;
+
+  // ── Profile ──────────────────────────────────────────────────
+  // undefined leaves the stored value untouched; null clears it.
+
+  @ApiPropertyOptional({ example: 'Ada', nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string | null;
+
+  @ApiPropertyOptional({ example: 'Lovelace', nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string | null;
+
+  @ApiPropertyOptional({
+    example: '1990-04-18',
+    nullable: true,
+    description: 'Calendar date (YYYY-MM-DD)',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string | null;
+
+  @ApiPropertyOptional({ enum: USER_GENDERS, example: 'female', nullable: true })
+  @IsOptional()
+  @IsIn(USER_GENDERS)
+  gender?: string | null;
 }

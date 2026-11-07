@@ -199,7 +199,10 @@ export class ShopperAuthService {
         phone: user.phone,
         email: user.email ?? user.id,
       },
-      user.loginTimeoutMinutes ?? undefined,
+      {
+        loginTimeoutMinutes: user.loginTimeoutMinutes ?? undefined,
+        roleExpirySeconds: await this.computeRoleExpirySeconds(user.roleCodes, user.organizationId),
+      },
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(
@@ -212,5 +215,19 @@ export class ShopperAuthService {
     );
 
     return tokenPair;
+  }
+
+  private async computeRoleExpirySeconds(
+    roleCodes: string[],
+    organizationId: string | null,
+  ): Promise<number | undefined> {
+    if (!roleCodes.length || !organizationId) {
+      return undefined;
+    }
+    const roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
+    const expiries = roles
+      .map((r) => r.jwtExpirySeconds)
+      .filter((s) => s != null && s > 0) as number[];
+    return expiries.length > 0 ? Math.max(...expiries) : undefined;
   }
 }

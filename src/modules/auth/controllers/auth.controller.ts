@@ -12,7 +12,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthResponseDto } from '../dto/auth-response.dto';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import { LoginDto } from '../dto/login.dto';
@@ -49,6 +55,14 @@ import { ModuleInfoDto } from '../../roles/dto/module-info.dto';
 class MeResponse {
   @ApiProperty() id!: string;
   @ApiProperty() username!: string;
+  /** "First Last", else the provider display name, else the username. */
+  @ApiProperty({ example: 'Ada Lovelace' }) name!: string;
+  @ApiPropertyOptional({ nullable: true }) firstName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) lastName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) displayName?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '1990-04-18' })
+  dateOfBirth?: string | null;
+  @ApiPropertyOptional({ nullable: true }) gender?: string | null;
   @ApiProperty() roles!: string[];
   @ApiProperty() permissions!: string[];
   @ApiProperty() modules!: ModuleInfoDto[];
@@ -305,9 +319,23 @@ export class AuthController {
     this.logger.debug(
       `Profile accessed: user=${currentUser.sub} username=${currentUser.username} org=${currentUser.organizationId ?? null}`,
     );
+    const fullName =
+      [currentUser.firstName, currentUser.lastName]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .join(' ')
+        .trim() ||
+      currentUser.displayName?.trim() ||
+      null;
+
     return {
       id: currentUser.sub,
       username: currentUser.username,
+      name: fullName ?? currentUser.username,
+      firstName: currentUser.firstName ?? null,
+      lastName: currentUser.lastName ?? null,
+      displayName: currentUser.displayName ?? null,
+      dateOfBirth: currentUser.dateOfBirth ?? null,
+      gender: currentUser.gender ?? null,
       roles: currentUser.roles,
       permissions: currentUser.permissions,
       modules: getUserModules(currentUser.permissions, currentUser.roles),

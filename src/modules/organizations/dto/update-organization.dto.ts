@@ -18,4 +18,10 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ example: 'acme.clinic.com' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(253)
+  domain?: string;
 }
