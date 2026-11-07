@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CreateUserDto } from '../dto/create-user.dto';
 import type { UserRepository } from '../repositories/user.repository';
@@ -17,12 +17,22 @@ export class CreateUserUseCase {
     private readonly passwordHasher: PasswordHasherPort,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepository: RoleRepository,
-  ) {}
+  ) {
+    this.logger = new Logger(CreateUserUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(payload: CreateUserDto, organizationId: string | null): Promise<User> {
+    this.logger.log(
+      `Create user attempt: username=${payload.username} organizationId=${organizationId ?? null}`,
+    );
     if (organizationId) {
       const existing = await this.userRepository.findByUsername(payload.username, organizationId);
       if (existing) {
+        this.logger.warn(
+          `Create user failed: username=${payload.username} already exists in org=${organizationId}`,
+        );
         throw new BadRequestException('Username already exists');
       }
     }
@@ -30,6 +40,9 @@ export class CreateUserUseCase {
     if (payload.email) {
       const emailOwner = await this.userRepository.findByEmail(payload.email.trim().toLowerCase());
       if (emailOwner) {
+        this.logger.warn(
+          `Create user failed: email=${payload.email} already in use`,
+        );
         throw new BadRequestException('Email already in use');
       }
     }
@@ -58,6 +71,10 @@ export class CreateUserUseCase {
       payload.loginTimeoutMinutes ?? null,
     );
 
-    return this.userRepository.create(user);
+    const saved = await this.userRepository.create(user);
+    this.logger.log(
+      `User created: id=${saved?.id ?? '<pending>'} username=${payload.username} organizationId=${organizationId ?? null} roleCodes=[${roleCodes.join(', ')}]`,
+    );
+    return saved;
   }
 }

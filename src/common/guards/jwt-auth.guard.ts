@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,11 +13,20 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly logger = new Logger(JwtAuthGuard.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly reflector: Reflector,
   ) {}
+
+  private userLabel(request: { user?: unknown }): string {
+    const user = request.user as
+      | { sub?: string; username?: string }
+      | undefined;
+    return user?.sub ?? user?.username ?? 'unauthenticated';
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -25,18 +35,31 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest<{ headers: Record<string, string>; user?: unknown }>();
+    const request = context.switchToHttp().getRequest<{
+      headers: Record<string, string>;
+      user?: unknown;
+    }>();
 
     // Allow internal service-to-service calls via API key
     const apiKey = request.headers['x-api-key'];
     const internalKey = this.configService.get<string>('INTERNAL_API_KEY');
     if (apiKey && internalKey && apiKey === internalKey) {
-      request.user = { sub: 'system', organizationId: '', username: 'system', roles: ['super_admin'], permissions: [] };
+      request.user = {
+        sub: 'system',
+        organizationId: '',
+        username: 'system',
+        roles: ['super_admin'],
+        permissions: [],
+      };
+      this.logger.debug(`Internal service-to-service call authenticated (system)`);
       return true;
     }
 
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
+      this.logger.warn(
+        `Authentication failed: missing bearer token (path=${(request as Record<string, unknown>).url ?? 'unknown'}, user=${this.userLabel(request)})`,
+      );
       throw new UnauthorizedException('Missing bearer token');
     }
 
@@ -47,12 +70,17 @@ export class JwtAuthGuard implements CanActivate {
     // and shared with identity (the token issuer).
     const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
     if (!secret) {
+      this.logger.error('JWT_ACCESS_SECRET is not configured');
       throw new InternalServerErrorException('JWT_ACCESS_SECRET is not configured');
     }
     try {
       request.user = await this.jwtService.verifyAsync(token, { secret });
+      this.logger.debug(`Access token verified for user=${this.userLabel(request)}`);
       return true;
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `Authentication failed: invalid access token (user=${this.userLabel(request)}, reason=${String((error as Error)?.message)})`,
+      );
       throw new UnauthorizedException('Invalid access token');
     }
   }

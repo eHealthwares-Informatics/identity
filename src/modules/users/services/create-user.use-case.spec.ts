@@ -12,6 +12,7 @@ describe('CreateUserUseCase', () => {
       findByUsername: jest.fn(),
       findByPhone: jest.fn(),
       findByEmail: jest.fn(),
+      findByOAuthProvider: jest.fn(),
       create: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),

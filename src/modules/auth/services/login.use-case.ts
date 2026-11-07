@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { compressPermissions } from '../../../common/utils/permission-set';
@@ -32,10 +32,15 @@ export class LoginUseCase {
     private readonly refreshTokenRepository: RefreshTokenRepository,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
-  ) {}
+  ) {
+    this.logger = new Logger(LoginUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(payload: LoginDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
     const identifier = payload.username.trim();
+    this.logger.log(`Login attempt: identifier=${identifier}`);
     const user = identifier.includes('@')
       ? await this.userRepository.findByEmail(identifier.toLowerCase())
       : await this.userRepository.findByUsername(identifier);
@@ -44,11 +49,13 @@ export class LoginUseCase {
     // with (or received an OTP on). Password must still match.
     const resolved = user ?? (await this.userRepository.findByPhone(identifier));
     if (!resolved || !resolved.isActive) {
+      this.logger.warn(`Login failed: user not found or inactive (identifier=${identifier})`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const isValid = await this.passwordHasher.verify(payload.password, resolved.passwordHash);
     if (!isValid) {
+      this.logger.warn(`Login failed: invalid password (userId=${resolved.id})`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -58,8 +65,8 @@ export class LoginUseCase {
     // failed upgrade must never fail the login itself.
     if (this.passwordHasher.needsRehash(resolved.passwordHash)) {
       try {
-        const passwordHash = await this.passwordHasher.hash(payload.password);
-        await this.userRepository.update({ ...resolved, passwordHash });
+        resolved.passwordHash = await this.passwordHasher.hash(payload.password);
+        await this.userRepository.update(resolved);
       } catch {
         // Ignore — the account still signs in and upgrades on a later login.
       }
@@ -98,6 +105,10 @@ export class LoginUseCase {
       eventType: 'login',
       organizationId: resolved.organizationId ?? null,
     });
+
+    this.logger.log(
+      `Login succeeded: userId=${resolved.id} username=${resolved.username} org=${resolved.organizationId ?? null}`,
+    );
 
     return tokenPair;
   }

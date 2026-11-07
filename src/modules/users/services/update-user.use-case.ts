@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
@@ -23,11 +29,19 @@ export class UpdateUserUseCase {
     private readonly roleRepository: RoleRepository,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
-  ) {}
+  ) {
+    this.logger = new Logger(UpdateUserUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(userId: string, payload: UpdateUserDto, organizationId: string | null): Promise<User> {
+    this.logger.log(
+      `Update user attempt: id=${userId} organizationId=${organizationId ?? null}`,
+    );
     const user = await this.userRepository.findById(userId, organizationId ?? undefined);
     if (!user) {
+      this.logger.warn(`User not found: id=${userId} organizationId=${organizationId ?? null}`);
       throw new NotFoundException('User not found');
     }
 
@@ -36,6 +50,9 @@ export class UpdateUserUseCase {
     if (payload.roleCodes && organizationId) {
       roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
       if (roles.length !== roleCodes.length) {
+        this.logger.warn(
+          `Update user failed: id=${userId} one or more roles are invalid in org=${organizationId}`,
+        );
         throw new BadRequestException('One or more roles are invalid');
       }
     }
@@ -71,8 +88,10 @@ export class UpdateUserUseCase {
     // credentials can no longer be used (force re-login on all devices).
     if (passwordChanged) {
       await this.refreshTokenRepository.revokeAllForUser(userId);
+      this.logger.log(`User password changed: id=${userId} all sessions revoked`);
     }
 
+    this.logger.log(`User updated: id=${saved.id} organizationId=${organizationId ?? null}`);
     return saved;
   }
 }
