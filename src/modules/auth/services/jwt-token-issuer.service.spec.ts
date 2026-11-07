@@ -36,7 +36,7 @@ describe('JwtTokenIssuerService', () => {
 
   it('honours the per-user login timeout converted to seconds', async () => {
     const { issuer, jwtService } = createIssuer();
-    await issuer.issuePair(payload, 480);
+    await issuer.issuePair(payload, { loginTimeoutMinutes: 480 });
     expect(jwtService.signAsync).toHaveBeenCalledWith(
       payload,
       expect.objectContaining({ expiresIn: 480 * 60 }),
@@ -47,7 +47,7 @@ describe('JwtTokenIssuerService', () => {
     const { issuer, jwtService } = createIssuer({
       ACCESS_TOKEN_TTL_MAX_MINUTES: '240',
     });
-    await issuer.issuePair(payload, 9999);
+    await issuer.issuePair(payload, { loginTimeoutMinutes: 9999 });
     expect(jwtService.signAsync).toHaveBeenCalledWith(
       payload,
       expect.objectContaining({ expiresIn: 240 * 60 }),
@@ -67,7 +67,7 @@ describe('JwtTokenIssuerService', () => {
 
   it('returns access token TTL in seconds', async () => {
     const { issuer } = createIssuer();
-    const pair = await issuer.issuePair(payload, 10);
+    const pair = await issuer.issuePair(payload, { loginTimeoutMinutes: 10 });
     expect(pair.accessTokenExpiresIn).toBe(10 * 60);
   });
 

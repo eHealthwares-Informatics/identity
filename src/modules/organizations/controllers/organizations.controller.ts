@@ -1,8 +1,21 @@
-import { Body, Controller, Delete, Get, Logger, NotFoundException, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  NotFoundException,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { RequestUser } from '../../../common/decorators/current-user.decorator';
 import { ListOrganizationsUseCase } from '../services/list-organizations.use-case';
@@ -10,6 +23,7 @@ import { GetOrganizationUseCase } from '../services/get-organization.use-case';
 import { CreateOrganizationUseCase } from '../services/create-organization.use-case';
 import { UpdateOrganizationUseCase } from '../services/update-organization.use-case';
 import { DeleteOrganizationUseCase } from '../services/delete-organization.use-case';
+import { ResolveOrganizationByDomainUseCase } from '../services/resolve-organization-by-domain.use-case';
 import { Organization } from '../domains/organization.entity';
 import { CreateOrganizationDto } from '../dto/create-organization.dto';
 import { UpdateOrganizationDto } from '../dto/update-organization.dto';
@@ -31,6 +45,7 @@ export class OrganizationsController {
     private readonly createOrganizationUseCase: CreateOrganizationUseCase,
     private readonly updateOrganizationUseCase: UpdateOrganizationUseCase,
     private readonly deleteOrganizationUseCase: DeleteOrganizationUseCase,
+    private readonly resolveOrganizationByDomainUseCase: ResolveOrganizationByDomainUseCase,
   ) {
     this.logger = new Logger(OrganizationsController.name);
   }
@@ -43,6 +58,7 @@ export class OrganizationsController {
       code: organization.code,
       name: organization.name,
       isActive: organization.isActive,
+      domain: organization.domain,
     };
   }
 
@@ -77,6 +93,27 @@ export class OrganizationsController {
       throw new NotFoundException('Organization not found');
     }
     return this.toResponse(organization);
+  }
+
+  @Public()
+  @Get('domain/:domain')
+  @ApiOperation({
+    summary: 'Resolve organization by domain (website/public)',
+    description: 'Returns the organization matching the given domain. Used by website flows to map a domain to an organisationId.',
+  })
+  async resolveByDomain(
+    @Param('domain') domain: string,
+  ): Promise<{ organizationId: string | null; code: string | null; name: string | null }> {
+    this.logger.debug(`Resolve organization by domain: domain=${domain}`);
+    const organization = await this.resolveOrganizationByDomainUseCase.execute(domain);
+    if (!organization) {
+      return { organizationId: null, code: null, name: null };
+    }
+    return {
+      organizationId: organization.id,
+      code: organization.code,
+      name: organization.name,
+    };
   }
 
   @Post()

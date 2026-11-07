@@ -16,6 +16,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'RxSoft',
     permissions: [
       { code: 'rxsoft', name: 'RxSoft (all)', description: 'Full access to every RxSoft module', resource: 'rxsoft', action: 'manage' },
+      { code: 'rxsoft.$module_admin', name: 'RxSoft Admin', description: 'Admin access to RxSoft modules', resource: 'rxsoft', action: 'manage' },
     ],
   },
   {
@@ -39,6 +40,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Catalog',
     permissions: [
       { code: 'rxsoft.catalog', name: 'Catalog (all)', description: 'Full access to the Catalog module', resource: 'catalog', action: 'manage' },
+      { code: 'rxsoft.catalog.$module_admin', name: 'Catalog Admin', description: 'Admin access to Catalog module', resource: 'catalog', action: 'manage' },
       { code: 'rxsoft.catalog.item.create', name: 'Create Item', description: 'Create new items', resource: 'item', action: 'create' },
       { code: 'rxsoft.catalog.item.read', name: 'Read Item', description: 'View items', resource: 'item', action: 'read' },
       { code: 'rxsoft.catalog.item.update', name: 'Update Item', description: 'Modify items', resource: 'item', action: 'update' },
@@ -50,6 +52,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Sales',
     permissions: [
       { code: 'rxsoft.sales', name: 'Sales (all)', description: 'Full access to the Sales module', resource: 'sales', action: 'manage' },
+      { code: 'rxsoft.sales.$module_admin', name: 'Sales Admin', description: 'Admin access to Sales module', resource: 'sales', action: 'manage' },
       { code: 'rxsoft.sales.sale.create', name: 'Create Sale', description: 'Create new sales', resource: 'sale', action: 'create' },
       { code: 'rxsoft.sales.sale.read', name: 'Read Sale', description: 'View sales', resource: 'sale', action: 'read' },
       { code: 'rxsoft.sales.sale.update', name: 'Update Sale', description: 'Modify sales', resource: 'sale', action: 'update' },
@@ -61,6 +64,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Inventory',
     permissions: [
       { code: 'rxsoft.inventory', name: 'Inventory (all)', description: 'Full access to the Inventory module', resource: 'inventory', action: 'manage' },
+      { code: 'rxsoft.inventory.$module_admin', name: 'Inventory Admin', description: 'Admin access to Inventory module', resource: 'inventory', action: 'manage' },
       { code: 'rxsoft.inventory.stock.read', name: 'Read Stock', description: 'View stock balances', resource: 'stock', action: 'read' },
       { code: 'rxsoft.inventory.stock.adjust', name: 'Adjust Stock', description: 'Adjust stock quantities', resource: 'stock', action: 'adjust' },
       { code: 'rxsoft.inventory.stock.transfer', name: 'Transfer Stock', description: 'Transfer between locations', resource: 'stock', action: 'transfer' },
@@ -71,6 +75,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Purchases',
     permissions: [
       { code: 'rxsoft.purchases', name: 'Purchases (all)', description: 'Full access to the Purchases module', resource: 'purchases', action: 'manage' },
+      { code: 'rxsoft.purchases.$module_admin', name: 'Purchases Admin', description: 'Admin access to Purchases module', resource: 'purchases', action: 'manage' },
       { code: 'rxsoft.purchases.order.create', name: 'Create Purchase Order', description: 'Create purchase orders', resource: 'purchase_order', action: 'create' },
       { code: 'rxsoft.purchases.order.read', name: 'Read Purchase Order', description: 'View purchase orders', resource: 'purchase_order', action: 'read' },
       { code: 'rxsoft.purchases.order.update', name: 'Update Purchase Order', description: 'Modify purchase orders', resource: 'purchase_order', action: 'update' },
@@ -100,9 +105,13 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Administration',
     permissions: [
       { code: 'rxsoft.admin', name: 'Administration (all)', description: 'Full access to the Administration module', resource: 'admin', action: 'manage' },
+      { code: 'rxsoft.admin.$module_admin', name: 'Admin Console', description: 'Admin console access', resource: 'admin', action: 'manage' },
       { code: 'rxsoft.admin.audit.read', name: 'Read Audit Logs', description: 'View audit logs', resource: 'audit', action: 'read' },
       { code: 'rxsoft.admin.settings.read', name: 'Read Settings', description: 'View system settings', resource: 'settings', action: 'read' },
       { code: 'rxsoft.admin.settings.update', name: 'Update Settings', description: 'Modify system settings', resource: 'settings', action: 'update' },
+      { code: 'rxsoft.admin.template.read', name: 'Read Templates', description: 'View print and notification templates', resource: 'template', action: 'read' },
+      { code: 'rxsoft.admin.template.update', name: 'Update Templates', description: 'Create, edit and delete print and notification templates', resource: 'template', action: 'update' },
+      { code: 'rxsoft.admin.people.read', name: 'Read People', description: 'View people directory', resource: 'admin', action: 'read' },
     ],
   },
   {
@@ -110,6 +119,7 @@ export const MODULE_PERMISSIONS: ModulePermissionDefinition[] = [
     moduleDisplayName: 'Website',
     permissions: [
       { code: 'rxsoft.website', name: 'Website (all)', description: 'Full access to the Website module', resource: 'website', action: 'manage' },
+      { code: 'rxsoft.website.$module_admin', name: 'Website Admin', description: 'Website admin access', resource: 'website', action: 'manage' },
       { code: 'rxsoft.website.content.read', name: 'Read Content', description: 'View website content', resource: 'content', action: 'read' },
       { code: 'rxsoft.website.content.create', name: 'Create Content', description: 'Create website content', resource: 'content', action: 'create' },
       { code: 'rxsoft.website.content.manage', name: 'Manage Content', description: 'Manage website content', resource: 'content', action: 'manage' },

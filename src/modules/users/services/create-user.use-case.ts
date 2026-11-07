@@ -4,9 +4,24 @@ import { CreateUserDto } from '../dto/create-user.dto';
 import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
-import { User } from '../domains/user.entity';
+import { User, type UserProfile } from '../domains/user.entity';
 import type { Role } from '../../roles/domains/role.entity';
 import { PASSWORD_HASHER, ROLE_REPOSITORY, USER_REPOSITORY } from '../../auth/services/identity.di-tokens';
+
+/** Blank/whitespace-only profile input is stored as null, never as "". */
+function cleanProfileValue(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function buildProfile(payload: CreateUserDto): UserProfile {
+  return {
+    firstName: cleanProfileValue(payload.firstName),
+    lastName: cleanProfileValue(payload.lastName),
+    dateOfBirth: cleanProfileValue(payload.dateOfBirth),
+    gender: cleanProfileValue(payload.gender),
+  };
+}
 
 @Injectable()
 export class CreateUserUseCase {
@@ -69,6 +84,7 @@ export class CreateUserUseCase {
       payload.phone,
       payload.email,
       payload.loginTimeoutMinutes ?? null,
+      buildProfile(payload),
     );
 
     const saved = await this.userRepository.create(user);

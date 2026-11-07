@@ -25,7 +25,11 @@ describe('permission catalog integrity', () => {
 
   it('every code is dotted, lowercase and free of `.*`', () => {
     for (const code of codes) {
-      expect(code).toMatch(/^[a-z0-9-]+(\.[a-z0-9_-]+)*$/);
+      // `$module_admin` is the one non-lowercase segment allowed: it is the
+      // sentinel for "module administrator" grants and matches the seed
+      // catalog (`seed/seeds/identity/inline/permissions.json`).
+      const normalised = code.replace(/\.\$module_admin$/, '.module_admin');
+      expect(normalised).toMatch(/^[a-z0-9-]+(\.[a-z0-9_-]+)*$/);
       // Parent grants are the default wildcard now — no code should carry `.*`.
       expect(code).not.toContain('*');
     }

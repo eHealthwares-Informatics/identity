@@ -8,6 +8,7 @@ import { GetOrganizationUseCase } from './services/get-organization.use-case';
 import { CreateOrganizationUseCase } from './services/create-organization.use-case';
 import { UpdateOrganizationUseCase } from './services/update-organization.use-case';
 import { DeleteOrganizationUseCase } from './services/delete-organization.use-case';
+import { ResolveOrganizationByDomainUseCase } from './services/resolve-organization-by-domain.use-case';
 import { ORG_REPOSITORY } from '../auth/services/identity.di-tokens';
 import { AuthModule } from '../auth/auth.module';
 
@@ -21,6 +22,7 @@ import { AuthModule } from '../auth/auth.module';
     CreateOrganizationUseCase,
     UpdateOrganizationUseCase,
     DeleteOrganizationUseCase,
+    ResolveOrganizationByDomainUseCase,
     { provide: ORG_REPOSITORY, useExisting: TypeormOrganizationRepository },
   ],
   exports: [ORG_REPOSITORY],

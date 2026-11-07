@@ -17,6 +17,9 @@ export class UserOrmEntity {
   @Column({ type: 'text' })
   username!: string;
 
+  @Column({ name: 'domain', type: 'text', nullable: true })
+  domain: string | null;
+
   @Column({ name: 'password_hash', type: 'text' })
   passwordHash!: string;
 

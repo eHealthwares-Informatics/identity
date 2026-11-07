@@ -12,7 +12,7 @@ export class IdentityMapper {
 
   static toDomainRole(orm: RoleOrmEntity): Role {
     const permissionCodes = (orm.permissions ?? []).map((p: PermissionOrmEntity) => p.code);
-    return new Role(orm.id, orm.organizationId, orm.code, orm.name, orm.description, permissionCodes);
+    return new Role(orm.id, orm.organizationId, orm.code, orm.name, orm.description, permissionCodes, orm.permissions, orm.jwtExpirySeconds);
   }
 
   static toDomainUser(orm: UserOrmEntity): User {
