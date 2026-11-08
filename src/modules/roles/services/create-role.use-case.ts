@@ -31,6 +31,8 @@ export class CreateRoleUseCase {
       payload.name,
       payload.description ?? null,
       payload.permissionCodes ?? [],
+      [],
+      payload.jwtExpirySeconds ?? null,
     );
 
     const saved = await this.roleRepository.create(role);

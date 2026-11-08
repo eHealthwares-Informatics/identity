@@ -13,7 +13,7 @@ export class TypeormOrganizationRepository implements OrganizationRepository {
   ) {}
 
   private toDomain(entity: OrganizationOrmEntity): Organization {
-    return new Organization(entity.id, entity.code, entity.name, entity.isActive);
+    return new Organization(entity.id, entity.code, entity.name, entity.isActive, entity.domain);
   }
 
   async list({
@@ -62,12 +62,20 @@ export class TypeormOrganizationRepository implements OrganizationRepository {
     return entity ? this.toDomain(entity) : null;
   }
 
+  async findByDomain(domain: string): Promise<Organization | null> {
+    const entity = await this.organizationRepository.findOne({
+      where: { domain, deletedAt: IsNull() },
+    });
+    return entity ? this.toDomain(entity) : null;
+  }
+
   async create(organization: Organization): Promise<Organization> {
     const entity = this.organizationRepository.create({
       id: organization.id,
       code: organization.code,
       name: organization.name,
       isActive: organization.isActive,
+      domain: organization.domain,
     });
     const saved = await this.organizationRepository.save(entity);
     return this.toDomain(saved);
@@ -80,6 +88,7 @@ export class TypeormOrganizationRepository implements OrganizationRepository {
     existing.code = organization.code;
     existing.name = organization.name;
     existing.isActive = organization.isActive;
+    existing.domain = organization.domain;
     const saved = await this.organizationRepository.save(existing);
     return this.toDomain(saved);
   }

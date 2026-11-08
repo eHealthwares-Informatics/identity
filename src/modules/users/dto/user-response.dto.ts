@@ -13,6 +13,10 @@ export class UserResponseDto {
   @ApiProperty()
   username!: string;
 
+  /** "First Last" when known, otherwise the username — ready for display. */
+  @ApiProperty({ example: 'Ada Lovelace' })
+  name!: string;
+
   @ApiPropertyOptional()
   phone?: string;
 

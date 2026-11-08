@@ -11,16 +11,18 @@ import { DeleteRoleUseCase } from '../services/delete-role.use-case';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { RequestUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 
-function toResponse(role: { id: string; code: string; name: string; description: string | null; permissionCodes: string[] }): RoleResponseDto {
-  return { id: role.id, code: role.code, name: role.name, description: role.description, permissionCodes: role.permissionCodes };
+function toResponse(role: { id: string; code: string; name: string; description: string | null; permissionCodes: string[]; jwtExpirySeconds?: number | null }): RoleResponseDto {
+  return { id: role.id, code: role.code, name: role.name, description: role.description, permissionCodes: role.permissionCodes, jwtExpirySeconds: role.jwtExpirySeconds };
 }
 
 @ApiTags('roles')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('roles')
 export class RolesController {
   constructor(
@@ -71,7 +73,7 @@ export class RolesController {
   ): Promise<{ data: RoleResponseDto[]; meta: { page: number; limit: number; total: number } }> {
     const offset = (page - 1) * limit;
     const result = await this.listRolesUseCase.list({
-      organizationId: currentUser.organizationId ?? '',
+      organizationId: currentUser.organizationId ?? null,
       offset,
       limit,
       search,
@@ -100,7 +102,7 @@ export class RolesController {
   }
 
   @Put(':id')
-  @Roles('super_admin')
+  @Permissions('rxsoft.identity.role.update')
   @ApiOperation({ summary: 'Update a role' })
   async update(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
     this.logger.log(
@@ -119,7 +121,7 @@ export class RolesController {
   }
 
   @Patch(':id')
-  @Roles('super_admin')
+  @Permissions('rxsoft.identity.role.update')
   @ApiOperation({ summary: 'Update a role (PATCH alias of PUT)' })
   async patch(@Param('id') id: string, @Body() payload: UpdateRoleDto, @CurrentUser() currentUser: RequestUser): Promise<RoleResponseDto> {
     this.logger.log(

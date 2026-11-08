@@ -1,5 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayNotEmpty, IsArray, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsDateString,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { USER_GENDERS } from '../domains/user.entity';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'cashier01' })
@@ -39,4 +53,28 @@ export class CreateUserDto {
   @IsInt()
   @Min(1)
   loginTimeoutMinutes?: number | null;
+
+  // ── Profile ──────────────────────────────────────────────────
+
+  @ApiPropertyOptional({ example: 'Ada' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string | null;
+
+  @ApiPropertyOptional({ example: 'Lovelace' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string | null;
+
+  @ApiPropertyOptional({ example: '1990-04-18', description: 'Calendar date (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string | null;
+
+  @ApiPropertyOptional({ enum: USER_GENDERS, example: 'female' })
+  @IsOptional()
+  @IsIn(USER_GENDERS)
+  gender?: string | null;
 }

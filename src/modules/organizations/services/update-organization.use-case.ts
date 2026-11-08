@@ -30,11 +30,22 @@ export class UpdateOrganizationUseCase {
       throw new BadRequestException('Organization code already exists');
     }
 
+    if (payload.domain !== undefined && payload.domain !== existing.domain) {
+      const existingDomain = await this.organizationRepository.findByDomain(payload.domain);
+      if (existingDomain && existingDomain.id !== id) {
+        this.logger.warn(
+          `Update organization failed: domain=${payload.domain} already exists`,
+        );
+        throw new BadRequestException('Organization domain already exists');
+      }
+    }
+
     const updated = new Organization(
       id,
       code,
       payload.name ?? existing.name,
       payload.isActive ?? existing.isActive,
+      payload.domain !== undefined ? payload.domain : existing.domain,
     );
     const saved = await this.organizationRepository.update(updated);
     this.logger.log(`Organization updated: id=${id} code=${code}`);

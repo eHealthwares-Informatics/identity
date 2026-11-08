@@ -61,6 +61,29 @@ describe('CreateUserUseCase', () => {
     expect(created.loginTimeoutMinutes).toBeNull();
   });
 
+  it('stores the profile name parts and clears blank ones', async () => {
+    const { useCase, userRepository } = createUseCase();
+    await useCase.execute(
+      {
+        username: 'jane',
+        password: 'secret',
+        firstName: ' Jane ',
+        lastName: '  ',
+        dateOfBirth: '1990-04-18',
+        gender: 'female',
+      },
+      'org-1',
+    );
+    const created = userRepository.create.mock.calls[0][0] as User;
+    expect(created.profile).toMatchObject({
+      firstName: 'Jane',
+      lastName: null,
+      dateOfBirth: '1990-04-18',
+      gender: 'female',
+    });
+    expect(created.name).toBe('Jane');
+  });
+
   it('defaults to the cashier role when roleCodes is omitted', async () => {
     const { useCase, userRepository } = createUseCase();
     await useCase.execute({ username: 'jane', password: 'secret' }, 'org-1');

@@ -24,11 +24,22 @@ export class CreateOrganizationUseCase {
       throw new BadRequestException('Organization code already exists');
     }
 
+    if (payload.domain) {
+      const existingDomain = await this.organizationRepository.findByDomain(payload.domain);
+      if (existingDomain) {
+        this.logger.warn(
+          `Create organization failed: domain=${payload.domain} already exists`,
+        );
+        throw new BadRequestException('Organization domain already exists');
+      }
+    }
+
     const organization = new Organization(
       randomUUID(),
       payload.code,
       payload.name,
       payload.isActive ?? true,
+      payload.domain ?? null,
     );
     const saved = await this.organizationRepository.create(organization);
     this.logger.log(`Organization created: id=${saved.id} code=${payload.code}`);

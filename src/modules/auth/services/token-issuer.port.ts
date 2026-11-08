@@ -14,9 +14,22 @@ export interface TokenPayload {
   permissions: string[];
   phone?: string;
   email: string;
+  // Profile claims so the console can show a real name straight from the
+  // token (before /auth/me round-trips) and fall back to the username.
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
 }
 
 export interface TokenIssuerPort {
-  issuePair(payload: TokenPayload, loginTimeoutMinutes?: number): Promise<TokenPair>;
+  issuePair(
+    payload: TokenPayload,
+    options?: {
+      loginTimeoutMinutes?: number;
+      roleExpirySeconds?: number;
+    },
+  ): Promise<TokenPair>;
   verifyRefreshToken(token: string): Promise<TokenPayload>;
 }

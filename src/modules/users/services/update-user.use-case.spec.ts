@@ -115,6 +115,21 @@ describe('UpdateUserUseCase', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('resolves roles against the target user org when the actor has no org (global super_admin)', async () => {
+    const { useCase, roleRepository, userRepository } = createUseCase();
+    roleRepository.listByCodes.mockResolvedValueOnce([
+      new Role('admin', 'org-1', 'admin', 'Administrator', null, []),
+    ]);
+
+    await useCase.execute('user-1', { roleCodes: ['admin'] }, null);
+
+    // Falls back to the target user's organization when the actor is org-less.
+    expect(roleRepository.listByCodes).toHaveBeenCalledWith(['admin'], 'org-1');
+    const updated = userRepository.update.mock.calls[0][0] as User;
+    expect(updated.roleCodes).toEqual(['admin']);
+    expect(updated.roles).toHaveLength(1);
+  });
+
   it('does not validate roles when roleCodes is omitted', async () => {
     const { useCase, roleRepository, userRepository } = createUseCase();
 
@@ -151,5 +166,51 @@ describe('UpdateUserUseCase', () => {
 
     const updated = userRepository.update.mock.calls[0][0] as User;
     expect(updated.loginTimeoutMinutes).toBe(120);
+  });
+
+  it('stores trimmed profile fields', async () => {
+    const { useCase, userRepository } = createUseCase();
+
+    await useCase.execute(
+      'user-1',
+      { firstName: '  Ada ', lastName: 'Lovelace', dateOfBirth: '1990-04-18', gender: 'female' },
+      'org-1',
+    );
+
+    const updated = userRepository.update.mock.calls[0][0] as User;
+    expect(updated.profile).toMatchObject({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      dateOfBirth: '1990-04-18',
+      gender: 'female',
+    });
+    expect(updated.name).toBe('Ada Lovelace');
+  });
+
+  it('leaves untouched profile fields alone and clears the ones sent as blank', async () => {
+    const { useCase, userRepository } = createUseCase();
+    userRepository.findById.mockResolvedValueOnce(
+      new User('user-1', 'org-1', null, 'jane', 'old-hash', true, ['admin'], [], undefined, 'jane@example.com', 30, {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        dateOfBirth: '1985-01-01',
+      }),
+    );
+
+    await useCase.execute('user-1', { firstName: '  ', lastName: 'Roe' }, 'org-1');
+
+    const updated = userRepository.update.mock.calls[0][0] as User;
+    expect(updated.profile.firstName).toBeNull();
+    expect(updated.profile.lastName).toBe('Roe');
+    expect(updated.profile.dateOfBirth).toBe('1985-01-01');
+  });
+
+  it('falls back to the username when no profile name is set', async () => {
+    const { useCase, userRepository } = createUseCase();
+
+    await useCase.execute('user-1', { email: 'new@example.com' }, 'org-1');
+
+    const updated = userRepository.update.mock.calls[0][0] as User;
+    expect(updated.name).toBe('jane');
   });
 });

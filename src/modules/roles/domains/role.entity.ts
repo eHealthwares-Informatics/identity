@@ -7,5 +7,6 @@ export class Role {
     public readonly description: string | null,
     public readonly permissionCodes: string[] = [],
     public readonly permissions: any[] = [],
+    public readonly jwtExpirySeconds: number | null = null,
   ) {}
 }

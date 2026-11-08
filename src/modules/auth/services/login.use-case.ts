@@ -75,6 +75,17 @@ export class LoginUseCase {
     const roles = resolved.organizationId
       ? await this.roleRepository.listByCodes(resolved.roleCodes, resolved.organizationId)
       : [];
+    // Max role-level JWT expiry (seconds) wins over user-level timeout.
+    let roleExpirySeconds: number | undefined = undefined;
+    for (const role of roles) {
+      const exp = role.jwtExpirySeconds;
+      if (exp !== null && exp > 0 && (roleExpirySeconds === undefined || exp > roleExpirySeconds)) {
+        roleExpirySeconds = exp;
+      }
+    }
+    const effectiveLoginTimeoutMinutes = roleExpirySeconds
+      ? Math.ceil(roleExpirySeconds / 60)
+      : resolved.loginTimeoutMinutes ?? undefined;
     // Minimal set: a parent grant covers its subtree, so children it already
     // covers are dropped rather than shipped in the token and /auth/me.
     const permissions = compressPermissions(roles.flatMap((role) => role.permissionCodes));
@@ -89,8 +100,15 @@ export class LoginUseCase {
         permissions,
         phone: resolved.phone,
         email: resolved.email ?? resolved.id,
+        firstName: resolved.profile.firstName ?? null,
+        lastName: resolved.profile.lastName ?? null,
+        displayName: resolved.profile.displayName ?? null,
+        dateOfBirth: resolved.profile.dateOfBirth ?? null,
+        gender: resolved.profile.gender ?? null,
       },
-      resolved.loginTimeoutMinutes ?? undefined,
+      {
+        loginTimeoutMinutes: effectiveLoginTimeoutMinutes,
+      },
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);

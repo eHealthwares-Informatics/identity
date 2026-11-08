@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm/dist/interfaces/typeorm-options.interface';
@@ -9,6 +9,7 @@ import { RoleRequestsModule } from './modules/role-requests/role-requests.module
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { ProvisionModule } from './modules/provision/provision.module';
+import { OrganizationDomainResolverMiddleware } from './common/middleware/organization-domain.resolver.middleware';
 
 // Named connections used by the provisioner to reach the rxsoft backend and
 // emr databases (same PostgreSQL instance as identity in dev). Mandatory:
@@ -63,4 +64,10 @@ const provisionedConnection = (envPrefix: string, defaultDb: string) =>
     ProvisionModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(OrganizationDomainResolverMiddleware)
+      .forRoutes('*');
+  }
+}

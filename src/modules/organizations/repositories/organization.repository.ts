@@ -11,6 +11,7 @@ export interface OrganizationRepository {
   findAll(): Promise<Organization[]>;
   findById(id: string): Promise<Organization | null>;
   findByCode(code: string): Promise<Organization | null>;
+  findByDomain(domain: string): Promise<Organization | null>;
   create(organization: Organization): Promise<Organization>;
   update(organization: Organization): Promise<Organization>;
   delete(id: string): Promise<void>;

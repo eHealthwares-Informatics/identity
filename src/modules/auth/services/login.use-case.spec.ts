@@ -96,13 +96,13 @@ describe('LoginUseCase', () => {
   it('passes the per-user loginTimeoutMinutes into token issuance', async () => {
     const { useCase, tokenIssuer, user } = createAll(480);
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), user.loginTimeoutMinutes);
+    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ loginTimeoutMinutes: user.loginTimeoutMinutes }));
   });
 
   it('passes undefined when the user has no loginTimeoutMinutes', async () => {
     const { useCase, tokenIssuer } = createAll();
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ loginTimeoutMinutes: undefined }));
   });
 
   it('rejects unknown users with UnauthorizedException', async () => {
