@@ -1,6 +1,7 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { compressPermissions } from '../../../common/utils/permission-set';
 import { LoginDto } from '../dto/login.dto';
 import type { UserRepository } from '../../users/repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
@@ -31,10 +32,15 @@ export class LoginUseCase {
     private readonly refreshTokenRepository: RefreshTokenRepository,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
-  ) {}
+  ) {
+    this.logger = new Logger(LoginUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(payload: LoginDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
     const identifier = payload.username.trim();
+    this.logger.log(`Login attempt: identifier=${identifier}`);
     const user = identifier.includes('@')
       ? await this.userRepository.findByEmail(identifier.toLowerCase())
       : await this.userRepository.findByUsername(identifier);
@@ -43,18 +49,46 @@ export class LoginUseCase {
     // with (or received an OTP on). Password must still match.
     const resolved = user ?? (await this.userRepository.findByPhone(identifier));
     if (!resolved || !resolved.isActive) {
+      this.logger.warn(`Login failed: user not found or inactive (identifier=${identifier})`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const isValid = await this.passwordHasher.verify(payload.password, resolved.passwordHash);
     if (!isValid) {
+      this.logger.warn(`Login failed: invalid password (userId=${resolved.id})`);
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Upgrade a superseded digest (unsalted SHA-256) now that we hold the
+    // plaintext — this is the only moment it is available, so it is how existing
+    // accounts migrate without a forced reset (rxsoft-qa#142). Best-effort: a
+    // failed upgrade must never fail the login itself.
+    if (this.passwordHasher.needsRehash(resolved.passwordHash)) {
+      try {
+        resolved.passwordHash = await this.passwordHasher.hash(payload.password);
+        await this.userRepository.update(resolved);
+      } catch {
+        // Ignore — the account still signs in and upgrades on a later login.
+      }
     }
 
     const roles = resolved.organizationId
       ? await this.roleRepository.listByCodes(resolved.roleCodes, resolved.organizationId)
       : [];
-    const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
+    // Max role-level JWT expiry (seconds) wins over user-level timeout.
+    let roleExpirySeconds: number | undefined = undefined;
+    for (const role of roles) {
+      const exp = role.jwtExpirySeconds;
+      if (exp !== null && exp > 0 && (roleExpirySeconds === undefined || exp > roleExpirySeconds)) {
+        roleExpirySeconds = exp;
+      }
+    }
+    const effectiveLoginTimeoutMinutes = roleExpirySeconds
+      ? Math.ceil(roleExpirySeconds / 60)
+      : resolved.loginTimeoutMinutes ?? undefined;
+    // Minimal set: a parent grant covers its subtree, so children it already
+    // covers are dropped rather than shipped in the token and /auth/me.
+    const permissions = compressPermissions(roles.flatMap((role) => role.permissionCodes));
 
     const tokenPair = await this.tokenIssuer.issuePair(
       {
@@ -66,8 +100,15 @@ export class LoginUseCase {
         permissions,
         phone: resolved.phone,
         email: resolved.email ?? resolved.id,
+        firstName: resolved.profile.firstName ?? null,
+        lastName: resolved.profile.lastName ?? null,
+        displayName: resolved.profile.displayName ?? null,
+        dateOfBirth: resolved.profile.dateOfBirth ?? null,
+        gender: resolved.profile.gender ?? null,
       },
-      resolved.loginTimeoutMinutes ?? undefined,
+      {
+        loginTimeoutMinutes: effectiveLoginTimeoutMinutes,
+      },
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);
@@ -82,6 +123,10 @@ export class LoginUseCase {
       eventType: 'login',
       organizationId: resolved.organizationId ?? null,
     });
+
+    this.logger.log(
+      `Login succeeded: userId=${resolved.id} username=${resolved.username} org=${resolved.organizationId ?? null}`,
+    );
 
     return tokenPair;
   }

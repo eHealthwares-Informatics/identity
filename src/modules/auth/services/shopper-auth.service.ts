@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { compressPermissions } from '../../../common/utils/permission-set';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThan, Repository } from 'typeorm';
@@ -183,7 +184,9 @@ export class ShopperAuthService {
     const roles = user.organizationId
       ? await this.roleRepository.listByCodes(user.roleCodes, user.organizationId)
       : [];
-    const permissions = [...new Set(roles.flatMap((role) => role.permissionCodes))];
+    // Minimal set: a parent grant covers its subtree, so children it already
+    // covers are dropped rather than shipped in the token and /auth/me.
+    const permissions = compressPermissions(roles.flatMap((role) => role.permissionCodes));
 
     const tokenPair = await this.tokenIssuer.issuePair(
       {
@@ -196,7 +199,10 @@ export class ShopperAuthService {
         phone: user.phone,
         email: user.email ?? user.id,
       },
-      user.loginTimeoutMinutes ?? undefined,
+      {
+        loginTimeoutMinutes: user.loginTimeoutMinutes ?? undefined,
+        roleExpirySeconds: await this.computeRoleExpirySeconds(user.roleCodes, user.organizationId),
+      },
     );
 
     const refreshTokenHash = await this.passwordHasher.hash(
@@ -209,5 +215,19 @@ export class ShopperAuthService {
     );
 
     return tokenPair;
+  }
+
+  private async computeRoleExpirySeconds(
+    roleCodes: string[],
+    organizationId: string | null,
+  ): Promise<number | undefined> {
+    if (!roleCodes.length || !organizationId) {
+      return undefined;
+    }
+    const roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
+    const expiries = roles
+      .map((r) => r.jwtExpirySeconds)
+      .filter((s) => s != null && s > 0) as number[];
+    return expiries.length > 0 ? Math.max(...expiries) : undefined;
   }
 }

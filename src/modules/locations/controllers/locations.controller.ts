@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, NotFoundException, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -39,7 +39,11 @@ export class LocationsController {
     private readonly createLocationUseCase: CreateLocationUseCase,
     private readonly updateLocationUseCase: UpdateLocationUseCase,
     private readonly deleteLocationUseCase: DeleteLocationUseCase,
-  ) {}
+  ) {
+    this.logger = new Logger(LocationsController.name);
+  }
+
+  private readonly logger: Logger;
 
   private toResponse(location: Location): LocationResponse {
     return {
@@ -77,6 +81,9 @@ export class LocationsController {
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationsListResponse> {
     const offset = (page - 1) * limit;
+    this.logger.debug(
+      `List locations: page=${page} limit=${limit} search=${search ?? ''} parentId=${parentId ?? ''} org=${currentUser.organizationId ?? null}`,
+    );
     const result = await this.listLocationsUseCase.execute(
       offset,
       limit,
@@ -98,11 +105,13 @@ export class LocationsController {
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationResponse> {
+    this.logger.debug(`Get location: id=${id} org=${currentUser.organizationId ?? null}`);
     const location = await this.getLocationUseCase.execute(
       id,
       this.resolveOrganizationId(organizationId, currentUser),
     );
     if (!location) {
+      this.logger.warn(`Location not found: id=${id} org=${currentUser.organizationId ?? null}`);
       throw new NotFoundException('Location not found');
     }
     return this.toResponse(location);
@@ -116,11 +125,18 @@ export class LocationsController {
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationResponse> {
-    const location = await this.createLocationUseCase.execute(
-      payload,
-      this.resolveOrganizationId(organizationId, currentUser),
-    );
-    return this.toResponse(location);
+    const orgId = this.resolveOrganizationId(organizationId, currentUser);
+    this.logger.log(`Create location attempt: code=${payload.code} name=${payload.name} org=${orgId}`);
+    try {
+      const location = await this.createLocationUseCase.execute(payload, orgId);
+      this.logger.log(`Location created: id=${location.id} code=${payload.code} org=${orgId}`);
+      return this.toResponse(location);
+    } catch (error) {
+      this.logger.warn(
+        `Create location failed: code=${payload.code} org=${orgId} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Put(':id')
@@ -132,12 +148,18 @@ export class LocationsController {
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationResponse> {
-    const location = await this.updateLocationUseCase.execute(
-      id,
-      payload,
-      this.resolveOrganizationId(organizationId, currentUser),
-    );
-    return this.toResponse(location);
+    const orgId = this.resolveOrganizationId(organizationId, currentUser);
+    this.logger.log(`Update location attempt: id=${id} code=${payload.code ?? '<unchanged>'} org=${orgId}`);
+    try {
+      const location = await this.updateLocationUseCase.execute(id, payload, orgId);
+      this.logger.log(`Location updated: id=${id} org=${orgId}`);
+      return this.toResponse(location);
+    } catch (error) {
+      this.logger.warn(
+        `Update location failed: id=${id} org=${orgId} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Patch(':id')
@@ -149,12 +171,18 @@ export class LocationsController {
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<LocationResponse> {
-    const location = await this.updateLocationUseCase.execute(
-      id,
-      payload,
-      this.resolveOrganizationId(organizationId, currentUser),
-    );
-    return this.toResponse(location);
+    const orgId = this.resolveOrganizationId(organizationId, currentUser);
+    this.logger.log(`Patch location attempt: id=${id} code=${payload.code ?? '<unchanged>'} org=${orgId}`);
+    try {
+      const location = await this.updateLocationUseCase.execute(id, payload, orgId);
+      this.logger.log(`Location patched: id=${id} org=${orgId}`);
+      return this.toResponse(location);
+    } catch (error) {
+      this.logger.warn(
+        `Patch location failed: id=${id} org=${orgId} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Delete(':id')
@@ -165,10 +193,17 @@ export class LocationsController {
     @Query('organizationId') organizationId: string | undefined,
     @CurrentUser() currentUser: RequestUser,
   ): Promise<{ ok: boolean }> {
-    await this.deleteLocationUseCase.execute(
-      id,
-      this.resolveOrganizationId(organizationId, currentUser),
-    );
-    return { ok: true };
+    const orgId = this.resolveOrganizationId(organizationId, currentUser);
+    this.logger.log(`Delete location attempt: id=${id} org=${orgId}`);
+    try {
+      await this.deleteLocationUseCase.execute(id, orgId);
+      this.logger.log(`Location deleted: id=${id} org=${orgId}`);
+      return { ok: true };
+    } catch (error) {
+      this.logger.warn(
+        `Delete location failed: id=${id} org=${orgId} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 }

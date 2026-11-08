@@ -14,6 +14,7 @@ import { WebsiteAccountService } from './services/website-account.service';
 import { ConversationClient } from './services/conversation-client.service';
 import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
+import { ScryptPasswordHasherService } from './services/scrypt-password-hasher.service';
 import { TypeormRefreshTokenRepository } from './repositories/typeorm-refresh-token.repository';
 import { TypeormUserRepository } from '../users/repositories/typeorm-user.repository';
 import { TypeormRoleRepository } from '../roles/repositories/typeorm-role.repository';
@@ -33,6 +34,7 @@ import {
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
+  TOKEN_HASHER,
   TOKEN_ISSUER,
   USER_REPOSITORY,
 } from './services/identity.di-tokens';
@@ -77,7 +79,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     { provide: ROLE_REPOSITORY, useExisting: TypeormRoleRepository },
     { provide: LOCATION_REPOSITORY, useExisting: TypeormLocationRepository },
     { provide: REFRESH_TOKEN_REPOSITORY, useExisting: TypeormRefreshTokenRepository },
-    { provide: PASSWORD_HASHER, useClass: Sha256PasswordHasherService },
+    { provide: PASSWORD_HASHER, useClass: ScryptPasswordHasherService },
+    { provide: TOKEN_HASHER, useClass: Sha256PasswordHasherService },
     { provide: TOKEN_ISSUER, useClass: JwtTokenIssuerService },
   ],
   exports: [
@@ -90,6 +93,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     REFRESH_TOKEN_REPOSITORY,
     TOKEN_ISSUER,
     PASSWORD_HASHER,
+    TOKEN_HASHER,
   ],
 })
 export class AuthModule {}

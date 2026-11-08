@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedCol
 
 @Entity('organizations')
 @Unique('uq_organizations_code', ['code'])
+@Unique('uq_organizations_domain', ['domain'])
 export class OrganizationOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -14,6 +15,9 @@ export class OrganizationOrmEntity {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
+
+  @Column({ name: 'domain', type: 'text', nullable: true, unique: true })
+  domain: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;

@@ -27,22 +27,38 @@ export class JwtTokenIssuerService implements TokenIssuerPort {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
   }
 
-  async issuePair(payload: TokenPayload, loginTimeoutMinutes?: number): Promise<TokenPair> {
-    // Per-user override wins, clamped to [1, max]; otherwise the global default.
-    const requestedMins = loginTimeoutMinutes ?? this.defaultAccessTokenExpiresIn;
-    const accessExpiresInMin = Math.min(Math.max(1, Math.floor(requestedMins)), this.maxAccessTokenExpiresIn);
-    const accessExpiresIn = accessExpiresInMin * 60;
+  async issuePair(
+    payload: TokenPayload,
+    options?: {
+      loginTimeoutMinutes?: number;
+      roleExpirySeconds?: number;
+    },
+  ): Promise<TokenPair> {
+    const maxAccessSeconds = this.maxAccessTokenExpiresIn * 60;
+    const defaultAccessSeconds = this.defaultAccessTokenExpiresIn * 60;
+
+    // Access token: role expiry > user login timeout > global default
+    const accessEffectiveSeconds =
+      options?.roleExpirySeconds ??
+      (options?.loginTimeoutMinutes ? options.loginTimeoutMinutes * 60 : defaultAccessSeconds);
+    const accessExpiresIn = Math.min(Math.max(1, Math.floor(accessEffectiveSeconds)), maxAccessSeconds);
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET', 'admin-access-secret'),
       expiresIn: accessExpiresIn,
     });
 
+    // Refresh token: role expiry > global refresh expiry (7 days)
+    const refreshExpiresIn = Math.min(
+      Math.max(1, options?.roleExpirySeconds ?? this.refreshTokenExpiresIn),
+      this.refreshTokenExpiresIn,
+    );
+
     const refreshToken = await this.jwtService.signAsync(
       { ...payload, jti: randomUUID() },
       {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'admin-refresh-secret'),
-        expiresIn: this.refreshTokenExpiresIn,
+        expiresIn: refreshExpiresIn,
       },
     );
 
@@ -50,7 +66,7 @@ export class JwtTokenIssuerService implements TokenIssuerPort {
       accessToken,
       refreshToken,
       accessTokenExpiresIn: accessExpiresIn,
-      refreshTokenExpiresIn: this.refreshTokenExpiresIn,
+      refreshTokenExpiresIn: refreshExpiresIn,
     };
   }
 

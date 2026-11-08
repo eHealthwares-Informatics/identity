@@ -32,7 +32,14 @@ async function main(): Promise<void> {
       `permission catalog: ${result.inserted} inserted, ${result.updated} updated, ${result.total} total`
     );
   } finally {
-    await app.close();
+    // The seed has already committed at this point; a failure in the shutdown
+    // hooks (TypeORM's named-datasource teardown can throw) must not turn a
+    // successful seed into a non-zero exit.
+    await app.close().catch((error: unknown) => {
+      logger.warn(
+        `shutdown hook failed (ignored): ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
   }
 }
 

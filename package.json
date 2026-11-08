@@ -9,7 +9,8 @@
     "start:prod": "node dist/main",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "seed:permissions": "node dist/seed-permissions.js"
+    "seed:permissions": "node dist/seed-permissions.js",
+    "check:catalog": "node dist/scripts/check-catalog-coverage.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

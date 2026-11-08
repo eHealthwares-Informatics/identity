@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { UpdateRoleDto } from '../dto/update-role.dto';
 import type { RoleRepository } from '../repositories/role.repository';
 import { Role } from '../domains/role.entity';
@@ -9,11 +9,19 @@ export class UpdateRoleUseCase {
   constructor(
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepository: RoleRepository,
-  ) {}
+  ) {
+    this.logger = new Logger(UpdateRoleUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(id: string, payload: UpdateRoleDto, organizationId: string): Promise<Role> {
+    this.logger.log(`Update role attempt: id=${id} organizationId=${organizationId}`);
     const existing = await this.roleRepository.findById(id, organizationId);
-    if (!existing) throw new NotFoundException('Role not found');
+    if (!existing) {
+      this.logger.warn(`Role not found: id=${id} organizationId=${organizationId}`);
+      throw new NotFoundException('Role not found');
+    }
 
     const updated = new Role(
       id,
@@ -22,8 +30,12 @@ export class UpdateRoleUseCase {
       payload.name ?? existing.name,
       payload.description ?? existing.description,
       payload.permissionCodes ?? existing.permissionCodes,
+      [],
+      payload.jwtExpirySeconds ?? existing.jwtExpirySeconds,
     );
 
-    return this.roleRepository.update(updated);
+    const saved = await this.roleRepository.update(updated);
+    this.logger.log(`Role updated: id=${id} organizationId=${organizationId}`);
+    return saved;
   }
 }

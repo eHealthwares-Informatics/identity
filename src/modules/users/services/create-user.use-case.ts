@@ -1,12 +1,27 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CreateUserDto } from '../dto/create-user.dto';
 import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
-import { User } from '../domains/user.entity';
+import { User, type UserProfile } from '../domains/user.entity';
 import type { Role } from '../../roles/domains/role.entity';
 import { PASSWORD_HASHER, ROLE_REPOSITORY, USER_REPOSITORY } from '../../auth/services/identity.di-tokens';
+
+/** Blank/whitespace-only profile input is stored as null, never as "". */
+function cleanProfileValue(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function buildProfile(payload: CreateUserDto): UserProfile {
+  return {
+    firstName: cleanProfileValue(payload.firstName),
+    lastName: cleanProfileValue(payload.lastName),
+    dateOfBirth: cleanProfileValue(payload.dateOfBirth),
+    gender: cleanProfileValue(payload.gender),
+  };
+}
 
 @Injectable()
 export class CreateUserUseCase {
@@ -17,12 +32,22 @@ export class CreateUserUseCase {
     private readonly passwordHasher: PasswordHasherPort,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepository: RoleRepository,
-  ) {}
+  ) {
+    this.logger = new Logger(CreateUserUseCase.name);
+  }
+
+  private readonly logger: Logger;
 
   async execute(payload: CreateUserDto, organizationId: string | null): Promise<User> {
+    this.logger.log(
+      `Create user attempt: username=${payload.username} organizationId=${organizationId ?? null}`,
+    );
     if (organizationId) {
       const existing = await this.userRepository.findByUsername(payload.username, organizationId);
       if (existing) {
+        this.logger.warn(
+          `Create user failed: username=${payload.username} already exists in org=${organizationId}`,
+        );
         throw new BadRequestException('Username already exists');
       }
     }
@@ -30,6 +55,9 @@ export class CreateUserUseCase {
     if (payload.email) {
       const emailOwner = await this.userRepository.findByEmail(payload.email.trim().toLowerCase());
       if (emailOwner) {
+        this.logger.warn(
+          `Create user failed: email=${payload.email} already in use`,
+        );
         throw new BadRequestException('Email already in use');
       }
     }
@@ -56,8 +84,13 @@ export class CreateUserUseCase {
       payload.phone,
       payload.email,
       payload.loginTimeoutMinutes ?? null,
+      buildProfile(payload),
     );
 
-    return this.userRepository.create(user);
+    const saved = await this.userRepository.create(user);
+    this.logger.log(
+      `User created: id=${saved?.id ?? '<pending>'} username=${payload.username} organizationId=${organizationId ?? null} roleCodes=[${roleCodes.join(', ')}]`,
+    );
+    return saved;
   }
 }

@@ -28,6 +28,7 @@ describe('LoginUseCase', () => {
       findByUsername: jest.fn(),
       findByPhone: jest.fn(),
       findByEmail: jest.fn(),
+      findByOAuthProvider: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -52,6 +53,7 @@ describe('LoginUseCase', () => {
     const passwordHasher: jest.Mocked<PasswordHasherPort> = {
       verify: jest.fn(),
       hash: jest.fn(),
+      needsRehash: jest.fn().mockReturnValue(false),
     };
     passwordHasher.verify.mockImplementation(async (_raw, digest) => digest === 'valid-hash');
     passwordHasher.hash.mockResolvedValue('token-hash');
@@ -94,13 +96,13 @@ describe('LoginUseCase', () => {
   it('passes the per-user loginTimeoutMinutes into token issuance', async () => {
     const { useCase, tokenIssuer, user } = createAll(480);
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), user.loginTimeoutMinutes);
+    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ loginTimeoutMinutes: user.loginTimeoutMinutes }));
   });
 
   it('passes undefined when the user has no loginTimeoutMinutes', async () => {
     const { useCase, tokenIssuer } = createAll();
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ loginTimeoutMinutes: undefined }));
   });
 
   it('rejects unknown users with UnauthorizedException', async () => {
@@ -118,6 +120,39 @@ describe('LoginUseCase', () => {
     await expect(
       useCase.execute({ username: 'jane', password: 'wrong' }),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  // rxsoft-qa#142 — a login is the only moment the plaintext is available, so
+  // it is where a legacy (unsalted SHA-256) digest upgrades to scrypt.
+  it('upgrades a legacy digest on a successful login', async () => {
+    const { useCase, userRepository, passwordHasher } = createAll();
+    passwordHasher.needsRehash.mockReturnValue(true);
+    passwordHasher.hash.mockResolvedValue('scrypt$fresh');
+
+    await useCase.execute({ username: 'jane', password: 'valid-hash' });
+
+    expect(userRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({ passwordHash: 'scrypt$fresh' })
+    );
+  });
+
+  it('leaves a current digest alone', async () => {
+    const { useCase, userRepository, passwordHasher } = createAll();
+    passwordHasher.needsRehash.mockReturnValue(false);
+
+    await useCase.execute({ username: 'jane', password: 'valid-hash' });
+
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('still logs in when the upgrade write fails (best-effort)', async () => {
+    const { useCase, userRepository, passwordHasher } = createAll();
+    passwordHasher.needsRehash.mockReturnValue(true);
+    userRepository.update.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(
+      useCase.execute({ username: 'jane', password: 'valid-hash' })
+    ).resolves.toBeDefined();
   });
 
   it('resolves an email identifier via findByEmail', async () => {

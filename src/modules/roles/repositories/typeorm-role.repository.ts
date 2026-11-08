@@ -1,6 +1,6 @@
 import { InjectRepository } from '@nestjs/typeorm';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Brackets, In, Repository } from 'typeorm';
+import { Brackets, In, IsNull, Not, Repository } from 'typeorm';
 import { RoleListQuery, RoleRepository } from './role.repository';
 import { Role } from '../domains/role.entity';
 import { RoleOrmEntity } from '../entities/role.orm-entity';
@@ -52,7 +52,7 @@ export class TypeormRoleRepository implements RoleRepository {
 
   async listAll(organizationId: string): Promise<Role[]> {
     const items = await this.roleRepository.find({
-      where: { organizationId },
+      where: { organizationId: organizationId ? organizationId : Not(IsNull()) },
       relations: { permissions: true },
       order: { code: 'ASC' },
     });
@@ -63,9 +63,12 @@ export class TypeormRoleRepository implements RoleRepository {
     const qb = this.roleRepository
       .createQueryBuilder('role')
       .leftJoinAndSelect('role.permissions', 'permission')
-      .where('role.organizationId = :organizationId', {
+      
+      if (query.organizationId) {
+        qb.where('role.organizationId = :organizationId', {
         organizationId: query.organizationId,
       });
+      }
 
     if (query.search) {
       qb.andWhere(
@@ -101,6 +104,7 @@ export class TypeormRoleRepository implements RoleRepository {
       name: role.name,
       description: role.description ?? null,
       permissions,
+      jwtExpirySeconds: role.jwtExpirySeconds,
     });
 
     const saved = await this.roleRepository.save(orm);
@@ -117,6 +121,7 @@ export class TypeormRoleRepository implements RoleRepository {
     orm.code = role.code;
     orm.name = role.name;
     orm.description = role.description ?? null;
+    orm.jwtExpirySeconds = role.jwtExpirySeconds;
 
     if (role.permissionCodes) {
       const permissions = role.permissionCodes.length

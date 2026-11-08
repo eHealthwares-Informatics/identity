@@ -6,12 +6,19 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthResponseDto } from '../dto/auth-response.dto';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import { LoginDto } from '../dto/login.dto';
@@ -48,9 +55,29 @@ import { ModuleInfoDto } from '../../roles/dto/module-info.dto';
 class MeResponse {
   @ApiProperty() id!: string;
   @ApiProperty() username!: string;
+  /** "First Last", else the provider display name, else the username. */
+  @ApiProperty({ example: 'Ada Lovelace' }) name!: string;
+  @ApiPropertyOptional({ nullable: true }) firstName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) lastName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) displayName?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '1990-04-18' })
+  dateOfBirth?: string | null;
+  @ApiPropertyOptional({ nullable: true }) gender?: string | null;
   @ApiProperty() roles!: string[];
   @ApiProperty() permissions!: string[];
   @ApiProperty() modules!: ModuleInfoDto[];
+  /**
+   * How the effective permissions were resolved:
+   *  - 'org'  — permissions derive from the user's organisation-scoped roles
+   *             (the only mode today; role_permissions is the single source).
+   *  - 'user' — reserved for user-direct permission grants layered on top of
+   *             the org roles (later phase — see the access-control plan).
+   *
+   * The UI enforcement ladder driven by these permissions (phased):
+   *   ROLE (module hidden) -> MENU (menu group hidden)
+   *   -> SUBMENU (menu item hidden) -> ACTIONS (buttons/links hidden).
+   */
+  @ApiProperty({ enum: ['org', 'user'], example: 'org' }) permissionMode!: 'org' | 'user';
 }
 
 @ApiTags('auth')
@@ -68,14 +95,28 @@ export class AuthController {
     private readonly logoutAllUseCase: LogoutAllUseCase,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
-  ) {}
+  ) {
+    this.logger = new Logger(AuthController.name);
+  }
+
+  private readonly logger: Logger;
 
   @Public()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new website user' })
-  register(@Body() payload: RegisterDto): Promise<AuthResponseDto> {
-    return this.registerUseCase.execute(payload);
+  async register(@Body() payload: RegisterDto): Promise<AuthResponseDto> {
+    this.logger.log(`Register attempt: username=${payload.username}`);
+    try {
+      const result = await this.registerUseCase.execute(payload);
+      this.logger.log(`Registration succeeded: username=${payload.username}`);
+      return result;
+    } catch (error) {
+      this.logger.warn(
+        `Registration failed: username=${payload.username} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Public()
@@ -92,8 +133,18 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate and issue access/refresh tokens' })
-  login(@Body() payload: LoginDto): Promise<AuthResponseDto> {
-    return this.loginUseCase.execute(payload);
+  async login(@Body() payload: LoginDto): Promise<AuthResponseDto> {
+    this.logger.log(`Login attempt: username=${payload.username}`);
+    try {
+      const result = await this.loginUseCase.execute(payload);
+      this.logger.log(`Login succeeded: username=${payload.username}`);
+      return result;
+    } catch (error) {
+      this.logger.warn(
+        `Login failed: username=${payload.username} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Public()
@@ -227,19 +278,37 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Revoke the presented refresh token (sign out this device)' })
-  logout(@Body() payload: RefreshTokenDto): Promise<void> {
-    return this.logoutUseCase.execute(payload);
+  async logout(@Body() payload: RefreshTokenDto): Promise<void> {
+    this.logger.log('Logout attempt: revoking refresh token (this device)');
+    try {
+      await this.logoutUseCase.execute(payload);
+      this.logger.log('Logout succeeded: refresh token revoked (this device)');
+    } catch (error) {
+      this.logger.warn(
+        `Logout failed: reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Public()
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Revoke all refresh tokens for the user (sign out every device)' })
-  logoutAll(
+  async logoutAll(
     @Headers('authorization') authHeader: string | undefined,
     @Body() payload: LogoutAllDto,
   ): Promise<void> {
-    return this.logoutAllUseCase.execute(authHeader, payload.refreshToken);
+    this.logger.log('Logout-all attempt: revoking all refresh tokens for user');
+    try {
+      await this.logoutAllUseCase.execute(authHeader, payload.refreshToken);
+      this.logger.log('Logout-all succeeded: all refresh tokens revoked');
+    } catch (error) {
+      this.logger.warn(
+        `Logout-all failed: reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Get('me')
@@ -247,12 +316,32 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile with modules' })
   me(@CurrentUser() currentUser: RequestUser): MeResponse {
+    this.logger.debug(
+      `Profile accessed: user=${currentUser.sub} username=${currentUser.username} org=${currentUser.organizationId ?? null}`,
+    );
+    const fullName =
+      [currentUser.firstName, currentUser.lastName]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .join(' ')
+        .trim() ||
+      currentUser.displayName?.trim() ||
+      null;
+
     return {
       id: currentUser.sub,
       username: currentUser.username,
+      name: fullName ?? currentUser.username,
+      firstName: currentUser.firstName ?? null,
+      lastName: currentUser.lastName ?? null,
+      displayName: currentUser.displayName ?? null,
+      dateOfBirth: currentUser.dateOfBirth ?? null,
+      gender: currentUser.gender ?? null,
       roles: currentUser.roles,
       permissions: currentUser.permissions,
       modules: getUserModules(currentUser.permissions, currentUser.roles),
+      // Phase 1 of the access-control plan: permissions resolve from the
+      // user's org-scoped roles. 'user' (direct user grants) arrives later.
+      permissionMode: 'org',
     };
   }
 

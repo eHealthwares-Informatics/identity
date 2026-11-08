@@ -12,6 +12,7 @@ describe('CreateUserUseCase', () => {
       findByUsername: jest.fn(),
       findByPhone: jest.fn(),
       findByEmail: jest.fn(),
+      findByOAuthProvider: jest.fn(),
       create: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
@@ -36,6 +37,7 @@ describe('CreateUserUseCase', () => {
     const passwordHasher: jest.Mocked<PasswordHasherPort> = {
       hash: jest.fn(async (raw: string) => `hash:${raw}`),
       verify: jest.fn(),
+      needsRehash: jest.fn().mockReturnValue(false),
     };
 
     const useCase = new CreateUserUseCase(userRepository, passwordHasher, roleRepository);
@@ -57,6 +59,29 @@ describe('CreateUserUseCase', () => {
     await useCase.execute({ username: 'jane', password: 'secret' }, 'org-1');
     const created = userRepository.create.mock.calls[0][0] as User;
     expect(created.loginTimeoutMinutes).toBeNull();
+  });
+
+  it('stores the profile name parts and clears blank ones', async () => {
+    const { useCase, userRepository } = createUseCase();
+    await useCase.execute(
+      {
+        username: 'jane',
+        password: 'secret',
+        firstName: ' Jane ',
+        lastName: '  ',
+        dateOfBirth: '1990-04-18',
+        gender: 'female',
+      },
+      'org-1',
+    );
+    const created = userRepository.create.mock.calls[0][0] as User;
+    expect(created.profile).toMatchObject({
+      firstName: 'Jane',
+      lastName: null,
+      dateOfBirth: '1990-04-18',
+      gender: 'female',
+    });
+    expect(created.name).toBe('Jane');
   });
 
   it('defaults to the cashier role when roleCodes is omitted', async () => {

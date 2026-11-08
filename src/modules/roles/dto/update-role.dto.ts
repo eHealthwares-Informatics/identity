@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsInt, Min, IsString } from 'class-validator';
 
 export class UpdateRoleDto {
   @ApiPropertyOptional({ example: 'manager' })
@@ -22,4 +22,10 @@ export class UpdateRoleDto {
   @IsArray()
   @IsString({ each: true })
   permissionCodes?: string[];
+
+  @ApiPropertyOptional({ example: 3600 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  jwtExpirySeconds?: number;
 }
