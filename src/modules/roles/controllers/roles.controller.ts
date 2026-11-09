@@ -89,7 +89,17 @@ export class RolesController {
   async catalog(@CurrentUser() currentUser: RequestUser): Promise<Array<{ code: string; name: string }>> {
     this.logger.debug(`Role catalog requested: organizationId=${currentUser.organizationId ?? null} user=${currentUser.sub}`);
     const roles = await this.listRolesUseCase.execute(currentUser.organizationId ?? '');
-    return roles.map((r) => ({ code: r.code, name: r.name }));
+    // Role codes repeat across organisations (one `admin` per org), and a
+    // super admin with no org scope receives them all. Dedupe by code so
+    // consumers (Select inputs) never see duplicate option values.
+    const seen = new Set<string>();
+    return roles
+      .filter((r) => {
+        if (seen.has(r.code)) return false;
+        seen.add(r.code);
+        return true;
+      })
+      .map((r) => ({ code: r.code, name: r.name }));
   }
 
   @Get(':id')
