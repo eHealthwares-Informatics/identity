@@ -130,6 +130,21 @@ describe('UpdateUserUseCase', () => {
     expect(updated.roles).toHaveLength(1);
   });
 
+  it("treats a blank organizationId ('') as global — the super-admin token shape", async () => {
+    const { useCase, roleRepository, userRepository } = createUseCase();
+    roleRepository.listByCodes.mockResolvedValueOnce([
+      new Role('admin', 'org-1', 'admin', 'Administrator', null, []),
+    ]);
+
+    await useCase.execute('user-1', { roleCodes: ['admin'] }, '');
+
+    // '' must never become a uuid filter; the user is found globally and roles
+    // resolve against the target user's organisation.
+    expect(userRepository.findById).toHaveBeenCalledWith('user-1', undefined);
+    expect(roleRepository.listByCodes).toHaveBeenCalledWith(['admin'], 'org-1');
+    expect(userRepository.update).toHaveBeenCalledWith(expect.any(User), undefined);
+  });
+
   it('does not validate roles when roleCodes is omitted', async () => {
     const { useCase, roleRepository, userRepository } = createUseCase();
 

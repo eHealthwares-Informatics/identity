@@ -13,10 +13,25 @@ export class TypeormUserRepository implements UserRepository {
     private readonly userRepository: Repository<UserOrmEntity>,
   ) {}
 
+  /**
+   * A super-admin / system token carries `organizationId: ''` (see the JWT
+   * guard's system user). Blank means "global — no organisation scope", so it
+   * must never be bound as a filter: Postgres rejects '' for the uuid column
+   * (`invalid input syntax for type uuid: ""`).
+   */
+  private scopedOrganizationId(
+    organizationId?: string | null,
+  ): string | undefined {
+    const value =
+      typeof organizationId === 'string' ? organizationId.trim() : '';
+    return value ? value : undefined;
+  }
+
   async findByUsername(username: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { username };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const item = await this.userRepository.findOne({ where, relations: { roles: true } });
     return item ? IdentityMapper.toDomainUser(item) : null;
@@ -24,8 +39,9 @@ export class TypeormUserRepository implements UserRepository {
 
   async findByPhone(phone: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { phone };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const item = await this.userRepository.findOne({ where, relations: { roles: true } });
     return item ? IdentityMapper.toDomainUser(item) : null;
@@ -33,8 +49,9 @@ export class TypeormUserRepository implements UserRepository {
 
   async findByEmail(email: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { email };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const item = await this.userRepository.findOne({ where, relations: { roles: true } });
     return item ? IdentityMapper.toDomainUser(item) : null;
@@ -46,8 +63,9 @@ export class TypeormUserRepository implements UserRepository {
     organizationId?: string | null,
   ): Promise<User | null> {
     const where: any = { oauthProvider: provider, oauthProviderId: providerUserId };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const item = await this.userRepository.findOne({ where, relations: { roles: true } });
     return item ? IdentityMapper.toDomainUser(item) : null;
@@ -55,8 +73,9 @@ export class TypeormUserRepository implements UserRepository {
 
   async findById(id: string, organizationId?: string | null): Promise<User | null> {
     const where: any = { id };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const item = await this.userRepository.findOne({ where, relations: { roles: true } });
     return item ? IdentityMapper.toDomainUser(item) : null;
@@ -87,8 +106,9 @@ export class TypeormUserRepository implements UserRepository {
 
   async update(user: User, organizationId?: string | null): Promise<User> {
     const where: any = { id: user.id };
-    if (organizationId !== undefined) {
-      where.organizationId = organizationId;
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
     }
     const existing = await this.userRepository.findOneOrFail({ where, relations: { roles: true } });
 
@@ -110,8 +130,13 @@ export class TypeormUserRepository implements UserRepository {
     return IdentityMapper.toDomainUser(reloaded);
   }
 
-  async delete(id: string, organizationId: string): Promise<void> {
-    const existing = await this.userRepository.findOne({ where: { id, organizationId } });
+  async delete(id: string, organizationId?: string | null): Promise<void> {
+    const where: any = { id };
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      where.organizationId = org;
+    }
+    const existing = await this.userRepository.findOne({ where });
     if (existing) {
       await this.userRepository.remove(existing);
     }
@@ -128,8 +153,9 @@ export class TypeormUserRepository implements UserRepository {
       .leftJoinAndSelect('user.roles', 'role')
       .where('user.isActive = :isActive', { isActive: true });
 
-    if (organizationId) {
-      qb.andWhere('user.organizationId = :organizationId', { organizationId });
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) {
+      qb.andWhere('user.organizationId = :organizationId', { organizationId: org });
     }
 
     if (search) {

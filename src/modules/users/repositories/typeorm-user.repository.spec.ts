@@ -49,6 +49,36 @@ describe('TypeormUserRepository', () => {
     return { repo, typeormRepo, existing };
   };
 
+  it('omits the org filter when organizationId is blank (global super-admin)', async () => {
+    const { repo, typeormRepo } = createRepo();
+
+    await repo.findById('user-1', '');
+
+    expect(typeormRepo.findOne).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      relations: { roles: true },
+    });
+  });
+
+  it('applies the org filter for a real organizationId', async () => {
+    const { repo, typeormRepo } = createRepo();
+
+    await repo.findById('user-1', 'org-1');
+
+    expect(typeormRepo.findOne).toHaveBeenCalledWith({
+      where: { id: 'user-1', organizationId: 'org-1' },
+      relations: { roles: true },
+    });
+  });
+
+  it('deletes globally when organizationId is blank', async () => {
+    const { repo, typeormRepo } = createRepo();
+
+    await repo.delete('user-1', '');
+
+    expect(typeormRepo.findOne).toHaveBeenCalledWith({ where: { id: 'user-1' } });
+  });
+
   it('persists updated role assignments and username', async () => {
     const { repo, typeormRepo } = createRepo();
 

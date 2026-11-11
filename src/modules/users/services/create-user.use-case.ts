@@ -39,14 +39,20 @@ export class CreateUserUseCase {
   private readonly logger: Logger;
 
   async execute(payload: CreateUserDto, organizationId: string | null): Promise<User> {
+    // A super-admin token carries organizationId '' (global). Normalise blank to
+    // null so it is never written/bound as a uuid (and the user is global).
+    const scopedOrganizationId = organizationId?.trim() || null;
     this.logger.log(
-      `Create user attempt: username=${payload.username} organizationId=${organizationId ?? null}`,
+      `Create user attempt: username=${payload.username} organizationId=${scopedOrganizationId ?? null}`,
     );
-    if (organizationId) {
-      const existing = await this.userRepository.findByUsername(payload.username, organizationId);
+    if (scopedOrganizationId) {
+      const existing = await this.userRepository.findByUsername(
+        payload.username,
+        scopedOrganizationId,
+      );
       if (existing) {
         this.logger.warn(
-          `Create user failed: username=${payload.username} already exists in org=${organizationId}`,
+          `Create user failed: username=${payload.username} already exists in org=${scopedOrganizationId}`,
         );
         throw new BadRequestException('Username already exists');
       }
@@ -64,8 +70,8 @@ export class CreateUserUseCase {
 
     const roleCodes = payload.roleCodes ?? ['cashier'];
     let roles: Role[] = [];
-    if (organizationId) {
-      roles = await this.roleRepository.listByCodes(roleCodes, organizationId);
+    if (scopedOrganizationId) {
+      roles = await this.roleRepository.listByCodes(roleCodes, scopedOrganizationId);
       if (roles.length !== roleCodes.length) {
         throw new BadRequestException('One or more roles are invalid');
       }
@@ -74,7 +80,7 @@ export class CreateUserUseCase {
     const passwordHash = await this.passwordHasher.hash(payload.password);
     const user = new User(
       randomUUID(),
-      organizationId,
+      scopedOrganizationId,
       payload.locationId ?? null,
       payload.username,
       passwordHash,
@@ -89,7 +95,7 @@ export class CreateUserUseCase {
 
     const saved = await this.userRepository.create(user);
     this.logger.log(
-      `User created: id=${saved?.id ?? '<pending>'} username=${payload.username} organizationId=${organizationId ?? null} roleCodes=[${roleCodes.join(', ')}]`,
+      `User created: id=${saved?.id ?? '<pending>'} username=${payload.username} organizationId=${scopedOrganizationId ?? null} roleCodes=[${roleCodes.join(', ')}]`,
     );
     return saved;
   }

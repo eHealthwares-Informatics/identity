@@ -63,10 +63,14 @@ export class UpdateUserUseCase {
   private readonly logger: Logger;
 
   async execute(userId: string, payload: UpdateUserDto, organizationId: string | null): Promise<User> {
+    // A super-admin token carries organizationId '' (global). Blank means "no
+    // organisation scope" — normalise it so it never reaches a uuid filter, and
+    // so role resolution falls back to the target user's own organisation.
+    const scopedOrganizationId = organizationId?.trim() || null;
     this.logger.log(
-      `Update user attempt: id=${userId} organizationId=${organizationId ?? null}`,
+      `Update user attempt: id=${userId} organizationId=${scopedOrganizationId ?? null}`,
     );
-    const user = await this.userRepository.findById(userId, organizationId ?? undefined);
+    const user = await this.userRepository.findById(userId, scopedOrganizationId ?? undefined);
     if (!user) {
       this.logger.warn(`User not found: id=${userId} organizationId=${organizationId ?? null}`);
       throw new NotFoundException('User not found');
@@ -78,7 +82,7 @@ export class UpdateUserUseCase {
     // global super_admin (organizationId null); falling back to the user's own
     // org keeps role edits working instead of silently leaving stale roles
     // (which would strip the user's permissions/modules on next login).
-    const roleScopeOrg = organizationId ?? user.organizationId;
+    const roleScopeOrg = scopedOrganizationId ?? user.organizationId;
     if (payload.roleCodes) {
       if (!roleScopeOrg) {
         this.logger.warn(
@@ -121,7 +125,7 @@ export class UpdateUserUseCase {
       mergeProfile(user.profile, payload),
     );
 
-    const saved = await this.userRepository.update(updatedUser, organizationId ?? undefined);
+    const saved = await this.userRepository.update(updatedUser, scopedOrganizationId ?? undefined);
 
     // Changing the password must invalidate every existing session so the old
     // credentials can no longer be used (force re-login on all devices).

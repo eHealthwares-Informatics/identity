@@ -116,6 +116,16 @@ describe('CreateUserUseCase', () => {
     expect(created.roles).toEqual([]);
   });
 
+  it("treats a blank organizationId ('') as global — the super-admin token shape", async () => {
+    const { useCase, userRepository, roleRepository } = createUseCase();
+    await useCase.execute({ username: 'global', password: 'secret' }, '');
+
+    expect(roleRepository.listByCodes).not.toHaveBeenCalled();
+    const created = userRepository.create.mock.calls[0][0] as User;
+    // '' must never be written to the uuid column; global user has no org.
+    expect(created.organizationId).toBeNull();
+  });
+
   it('throws BadRequestException for a duplicate username', async () => {
     const { useCase, userRepository } = createUseCase();
     userRepository.findByUsername.mockResolvedValueOnce({ id: 'x' } as never);

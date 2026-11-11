@@ -16,18 +16,29 @@ export class AssignRoleUseCase {
   ) {}
 
   async execute(userId: string, payload: AssignRoleDto, organizationId: string) {
+    const scopedOrganizationId = organizationId?.trim() || undefined;
     this.logger.log(
-      `Assign role attempt: userId=${userId} role=${payload.roleCode} organizationId=${organizationId}`,
+      `Assign role attempt: userId=${userId} role=${payload.roleCode} organizationId=${scopedOrganizationId ?? null}`,
     );
-    const user = await this.userRepository.findById(userId, organizationId);
+    const user = await this.userRepository.findById(userId, scopedOrganizationId);
     if (!user) {
-      this.logger.warn(`User not found: id=${userId} organizationId=${organizationId}`);
+      this.logger.warn(
+        `User not found: id=${userId} organizationId=${scopedOrganizationId ?? null}`,
+      );
       throw new NotFoundException('User not found');
     }
 
-    const role = await this.roleRepository.findByCode(payload.roleCode, organizationId);
+    // `roles.organization_id` is a non-null uuid, so a global admin (org '')
+    // must resolve roles against the target user's organisation — never bind
+    // '' to the uuid column.
+    const roleScopeOrg = scopedOrganizationId ?? user.organizationId;
+    if (!roleScopeOrg) {
+      throw new BadRequestException('User has no organization to resolve roles against');
+    }
+
+    const role = await this.roleRepository.findByCode(payload.roleCode, roleScopeOrg);
     if (!role) {
-      this.logger.warn(`Role not found: code=${payload.roleCode} organizationId=${organizationId}`);
+      this.logger.warn(`Role not found: code=${payload.roleCode} organizationId=${roleScopeOrg}`);
       throw new BadRequestException('Role not found');
     }
 
@@ -36,14 +47,14 @@ export class AssignRoleUseCase {
       // The repository persists the resolved role entities (`user.roles`), not
       // the raw codes. Resolve them here or the assignment is silently dropped
       // and the user ends up with no permissions (and therefore no modules).
-      user.roles = await this.roleRepository.listByCodes(user.roleCodes, organizationId);
-      await this.userRepository.update(user, organizationId);
+      user.roles = await this.roleRepository.listByCodes(user.roleCodes, roleScopeOrg);
+      await this.userRepository.update(user, roleScopeOrg);
       this.logger.log(
-        `Role assigned: userId=${userId} role=${payload.roleCode} organizationId=${organizationId}`,
+        `Role assigned: userId=${userId} role=${payload.roleCode} organizationId=${roleScopeOrg}`,
       );
     } else {
       this.logger.log(
-        `Role already assigned: userId=${userId} role=${payload.roleCode} organizationId=${organizationId}`,
+        `Role already assigned: userId=${userId} role=${payload.roleCode} organizationId=${roleScopeOrg}`,
       );
     }
 

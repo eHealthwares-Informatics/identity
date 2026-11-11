@@ -13,6 +13,6 @@ export interface UserRepository {
   findById(id: string, organizationId?: string | null): Promise<User | null>;
   create(user: User): Promise<User>;
   update(user: User, organizationId?: string | null): Promise<User>;
-  delete(id: string, organizationId: string): Promise<void>;
+  delete(id: string, organizationId?: string | null): Promise<void>;
   list(offset: number, limit: number, organizationId: string, search?: string): Promise<{ items: User[]; total: number }>;
 }
