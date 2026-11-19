@@ -13,6 +13,9 @@ npm install
 - `npm run start:dev` — dev server with watch on port 8092
 - `npm run build` — compile TypeScript
 - `npm run start` — production start
+- `npm test` — unit tests
+- `npm run check:catalog` — verify references (frontend sidebar, seed/identity templates) against the permission catalog (needs `npm run build` first)
+- `npm run check:drift` — tenant template + permission-catalog + module-list drift guard (no build needed)
 
 ## Database
 
@@ -58,6 +61,17 @@ const tenant = tenantFromUser(currentUser);
 | `permissions` | `GET /permissions/modules` | Available permissions grouped by module |
 | `organizations` | CRUD `/organizations` | Tenant organizations |
 | `locations` | CRUD `/locations` | General-purpose locations scoped to org |
+| `provision` | `POST /provision`, `GET /provision/health`, `GET /provision/status/:code`, `DELETE /provision/:code` | Native tenant provisioning/teardown (identity + rxsoft + EMR). Public, gated by `ONBOARD_ORGANISATIONS_ENABLED` |
+| `auth` onboarding | `POST /auth/onboard-organization` (`@Public()`) | Self-serve organisation signup used by the login page; refuses an existing code/email (409) |
+
+### Provisioning
+
+Production onboarding is fully native — identity must not depend on the `seed/` service.
+
+- `src/modules/provision/org-template.json` is the tenant template (roles, users, EMR departments/wards/beds, demo patients/admissions, location/price-list constants). `org-template.ts` is a thin typed wrapper.
+- `seed/src/provision/org-template.json` is a byte-identical copy for seed's local CLI/e2e provisioner. `node ../scripts/check-provision-drift.mjs` (or `npm run check:drift`) fails when the copies, the permission catalog, seed `permissions.json`/`role_permissions.json`, or the frontend module list diverge.
+- `GET /provision/status/:code` returns `counts` for every table the provisioner writes (identity/backend/emr). The onboarding e2e uses it to prove a full tenant was created and that deprovision empties the EMR clinical block too.
+- Demo accounts (`demo_<module>` in the DEFAULT org, mapped to the existing `<module>_admin` roles) are seeded by `seed/seeds/identity/inline/{users,user_roles}.json` via `npm run seed -- --target identity` (run from `seed/`).
 
 ## Architecture
 

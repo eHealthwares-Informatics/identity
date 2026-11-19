@@ -143,6 +143,10 @@ export class ProvisionService {
       is_active: true,
     }));
     await deptTarget.save(departmentRows);
+    // Refresh the lookup with the rows just written. Building it from the
+    // pre-insert read made the ward loop below find no department on a fresh
+    // organisation (wards/beds silently stayed at zero).
+    for (const row of departmentRows) deptByCode.set(String(row.code), row);
     this.logger.log(`Provisioning ${departmentRows.length} EMR departments for ${orgCode}`);
 
     // ── emr: wards (two per inpatient department) + beds ──────────────
@@ -851,25 +855,7 @@ export class ProvisionService {
     ];
     const identityResults = await cleaner.run(identitySteps, org.id);
     const identityFailures = identityResults.filter((r) => r.outcome !== 'cleaned');
-    const orgRowFailures: CleanupResult[] = [];
-    if (identityFailures.length === 0) {
-      // The organizations row is the retry marker: keep it while its own
-      // children survive, so the next deprovision finishes the job instead of
-      // orphaning users/roles that already lost their organisation.
-      try {
-        await identityDb.query('DELETE FROM "organizations" WHERE id = $1', [org.id]);
-      } catch (err: any) {
-        orgRowFailures.push({
-          name: 'identity.organizations',
-          table: 'organizations',
-          outcome: 'failed',
-          deleted: 0,
-          attempts: 1,
-          error: err?.message ? String(err.message) : 'could not delete organizations row',
-          code: err?.code,
-        });
-      }
-    } else {
+    if (identityFailures.length > 0) {
       this.logger.error(
         `[deprovision:${orgCode}] identity cleanup incomplete ` +
           `(${identityFailures.map((f) => `${f.name}: ${f.error}`).join('; ')}) — ` +
@@ -906,24 +892,59 @@ export class ProvisionService {
       org.id,
     );
 
-    // ── emr: departments per HQ site ──────────────────────────────────────
+    // ── emr: demo clinical data + departments per HQ site ─────────────────
+    // Order matters: admissions reference visits/patients/wards/beds; visits
+    // reference patients; beds reference wards; wards reference departments.
+    // The provisioner writes all six tables, so teardown must empty all six —
+    // leaving patients/visits/admissions behind made `deprovisioned: true`
+    // untrue.
+    const emrTables: Array<[string, string]> = [
+      ['admissions', orgScoped],
+      ['visits', orgScoped],
+      ['patients', orgScoped],
+      ['beds', orgScoped],
+      ['wards', orgScoped],
+      ['departments', orgScoped],
+    ];
     const emrResults = await cleaner.run(
-      [
-        {
-          dataSource: this.emrDb,
-          name: 'emr.departments',
-          table: 'departments',
-          where: orgScoped,
-        },
-      ],
+      emrTables.map(([table, where]) => ({
+        dataSource: this.emrDb,
+        name: `emr.${table}`,
+        table,
+        where,
+      })),
       org.id,
     );
 
     const tables = [...identityResults, ...backendResults, ...emrResults];
-    const failures = [
-      ...orgRowFailures,
-      ...tables.filter((r) => r.outcome !== 'cleaned'),
-    ];
+    const failures = tables.filter((r) => r.outcome !== 'cleaned');
+
+    // The organizations row is the retry marker: delete it only after EVERY
+    // target is clean. Previously it was deleted as soon as the identity tables
+    // were empty, so a backend/EMR partial failure could never be retried (the
+    // next call found no organization and reported `not_found`, leaving the
+    // stock/clinical rows orphaned).
+    if (failures.length === 0) {
+      try {
+        await identityDb.query('DELETE FROM "organizations" WHERE id = $1', [org.id]);
+      } catch (err: any) {
+        failures.push({
+          name: 'identity.organizations',
+          table: 'organizations',
+          outcome: 'failed',
+          deleted: 0,
+          attempts: 1,
+          error: err?.message ? String(err.message) : 'could not delete organizations row',
+          code: err?.code,
+        });
+      }
+    } else {
+      this.logger.error(
+        `[deprovision:${orgCode}] cleanup incomplete (${failures.length} table(s)) — ` +
+          'keeping the organizations row for a retry',
+      );
+    }
+
     const deprovisioned = failures.length === 0;
     const durationMs = Date.now() - startedAt;
     const outcome: DeprovisionOutcome = {
@@ -954,7 +975,63 @@ export class ProvisionService {
       where: { code: orgCode },
       withDeleted: true,
     });
-    return { exists: Boolean(org), code: orgCode, organizationId: org?.id ?? null };
+    if (!org) {
+      return { exists: false, code: orgCode, organizationId: null };
+    }
+    return {
+      exists: true,
+      code: orgCode,
+      organizationId: org.id,
+      counts: await this.provisionedCounts(org.id),
+    };
+  }
+
+  /** Row counts per provisioned table — the onboarding e2e's drift signal. */
+  private async provisionedCounts(orgId: string): Promise<ProvisionStatus['counts']> {
+    const count = async (db: { query: (sql: string, params?: unknown[]) => Promise<any> }, sql: string) => {
+      try {
+        const rows = await db.query(sql, [orgId]);
+        return Number(rows?.[0]?.count ?? 0);
+      } catch {
+        return -1;
+      }
+    };
+
+    return {
+      identity: {
+        roles: await count(this.defaultDb(), 'SELECT COUNT(*)::int AS count FROM roles WHERE organization_id = $1'),
+        users: await count(this.defaultDb(), 'SELECT COUNT(*)::int AS count FROM users WHERE organization_id = $1'),
+        role_permissions: await count(
+          this.defaultDb(),
+          'SELECT COUNT(*)::int AS count FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE organization_id = $1)',
+        ),
+        user_roles: await count(
+          this.defaultDb(),
+          'SELECT COUNT(*)::int AS count FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE organization_id = $1)',
+        ),
+      },
+      backend: {
+        organisation_items: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM organisation_items WHERE organization_id = $1'),
+        price_lists: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM price_lists WHERE organization_id = $1'),
+        price_list_items: await count(
+          this.backendDb,
+          'SELECT COUNT(*)::int AS count FROM price_list_items WHERE price_list_id IN (SELECT id FROM price_lists WHERE organization_id = $1)',
+        ),
+        stock_locations: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM stock_locations WHERE organization_id = $1'),
+        stock_balances: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM stock_balances WHERE organization_id = $1'),
+        parties: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM parties WHERE organization_id = $1'),
+        user_pos_configs: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM user_pos_configs WHERE organization_id = $1'),
+        gl_accounts: await count(this.backendDb, 'SELECT COUNT(*)::int AS count FROM gl_accounts WHERE organization_id = $1'),
+      },
+      emr: {
+        departments: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM departments WHERE organization_id = $1'),
+        wards: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM wards WHERE organization_id = $1'),
+        beds: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM beds WHERE organization_id = $1'),
+        patients: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM patients WHERE organization_id = $1'),
+        visits: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM visits WHERE organization_id = $1'),
+        admissions: await count(this.emrDb, 'SELECT COUNT(*)::int AS count FROM admissions WHERE organization_id = $1'),
+      },
+    };
   }
 
   // ── pricing helpers ────────────────────────────────────────────────────

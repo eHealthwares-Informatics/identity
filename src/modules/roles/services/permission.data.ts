@@ -1,25 +1,29 @@
 import { permissionMatches } from '../../../common/utils/permission-matcher';
 import { ModuleInfoDto } from '../dto/module-info.dto';
 
+// `root` values are frontend route paths (the module chooser / single-module
+// redirect navigates to them directly). They used to be backend roots
+// (`/items`, `/conversations`, …), which matched no frontend route and caused
+// the post-onboarding redirect to bounce through `/` to `/modules`.
 export const AVAILABLE_MODULES: ModuleInfoDto[] = [
-  { id: 'rxsoft', name: 'RxSoft', description: 'Pharmacy Admin', root: '/items', permissionRoots: ['rxsoft'] },
-  { id: 'conversation', name: 'Conversation', description: 'Workflow Chat', root: '/conversations' },
-  { id: 'communication', name: 'Switch', description: 'Messaging & Routing', root: '/messages' },
-  { id: 'coding-concept', name: 'Coding Concept', description: 'Terminology', root: '/coding-concepts' },
-  { id: 'lis', name: 'LIS', description: 'Laboratory', root: '/lis' },
-  { id: 'emr', name: 'EMR', description: 'Electronic Medical Record', root: '/emr' },
+  { id: 'rxsoft', name: 'RxSoft', description: 'Pharmacy Admin', root: '/rxsoft/dashboard', permissionRoots: ['rxsoft'] },
+  { id: 'conversation', name: 'Conversation', description: 'Workflow Chat', root: '/conversation/dashboard' },
+  { id: 'communication', name: 'Switch', description: 'Messaging & Routing', root: '/communication/dashboard' },
+  { id: 'coding-concept', name: 'Coding Concept', description: 'Terminology', root: '/coding-concept/dashboard' },
+  { id: 'lis', name: 'LIS', description: 'Laboratory', root: '/lis/dashboard' },
+  { id: 'emr', name: 'EMR', description: 'Electronic Medical Record', root: '/emr/dashboard' },
   {
     id: 'admin',
     name: 'Admin Console',
     description: 'Administration',
-    root: '/users',
+    root: '/admin/dashboard',
     permissionRoots: ['admin', 'rxsoft.admin'],
   },
   {
     id: 'website',
     name: 'Website Console',
     description: 'Website',
-    root: '/damorex',
+    root: '/website/dashboard',
     permissionRoots: ['website', 'rxsoft.website', 'shop', 'rxsoft.shop'],
   },
   {
@@ -28,7 +32,7 @@ export const AVAILABLE_MODULES: ModuleInfoDto[] = [
     id: 'identity',
     name: 'Identity',
     description: 'Identity & Access',
-    root: '/identity',
+    root: '/identity/dashboard',
     permissionRoots: ['identity', 'rxsoft.identity'],
   },
 ];
