@@ -31,8 +31,12 @@ export class RoleRequestsController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'List all role requests (admin)' })
-  list(@Query('status') _status: string | undefined): Promise<RoleRequestView[]> {
-    return this.service.listAll();
+  list(
+    @Query('status') _status: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ): Promise<RoleRequestView[]> {
+    // Super admins (blank org) see every request; org admins see their own.
+    return this.service.listAll(user.organizationId ?? null);
   }
 
   @Patch(':id/approve')
@@ -44,7 +48,7 @@ export class RoleRequestsController {
     @Body() payload: UpdateRoleRequestDto,
     @CurrentUser() user: RequestUser,
   ): Promise<RoleRequestView> {
-    return this.service.decide(id, 'approve', user.sub, payload.roleCode);
+    return this.service.decide(id, 'approve', user.sub, payload.roleCode, user.organizationId ?? null);
   }
 
   @Patch(':id/reject')
@@ -52,6 +56,6 @@ export class RoleRequestsController {
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Reject a role request (admin)' })
   reject(@Param('id') id: string, @CurrentUser() user: RequestUser): Promise<RoleRequestView> {
-    return this.service.decide(id, 'reject', user.sub);
+    return this.service.decide(id, 'reject', user.sub, undefined, user.organizationId ?? null);
   }
 }

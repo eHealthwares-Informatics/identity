@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Logger, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Logger, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CreateRoleDto } from '../dto/create-role.dto';
 import { UpdateRoleDto } from '../dto/update-role.dto';
@@ -15,6 +15,7 @@ import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { normalizeTenantId } from '../../../common/tenant-context';
 
 function toResponse(role: { id: string; code: string; name: string; description: string | null; permissionCodes: string[]; jwtExpirySeconds?: number | null }): RoleResponseDto {
   return { id: role.id, code: role.code, name: role.name, description: role.description, permissionCodes: role.permissionCodes, jwtExpirySeconds: role.jwtExpirySeconds };
@@ -45,8 +46,16 @@ export class RolesController {
       `Create role attempt: code=${payload.code} organizationId=${currentUser.organizationId ?? null} actor=${currentUser.sub}`,
     );
     try {
-      const role = await this.createRoleUseCase.execute(payload, currentUser.organizationId ?? '');
-      this.logger.log(`Role created: id=${role.id} code=${payload.code} organizationId=${currentUser.organizationId ?? null}`);
+      // Roles are organisation-scoped (organization_id is NOT NULL). A super
+      // admin must select an organisation before creating one.
+      const organizationId = normalizeTenantId(currentUser.organizationId);
+      if (!organizationId) {
+        throw new BadRequestException(
+          'Select an organisation before creating a role',
+        );
+      }
+      const role = await this.createRoleUseCase.execute(payload, organizationId);
+      this.logger.log(`Role created: id=${role.id} code=${payload.code} organizationId=${organizationId}`);
       return toResponse(role);
     } catch (error) {
       this.logger.warn(
