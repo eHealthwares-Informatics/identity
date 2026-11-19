@@ -1,5 +1,7 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
+export type OrganizationScope = 'all' | 'global' | 'org';
+
 export type RequestUser = {
   sub: string;
   organizationId: string;
@@ -7,6 +9,7 @@ export type RequestUser = {
   username: string;
   roles: string[];
   permissions: string[];
+  organizationScope?: OrganizationScope;
   // Profile claims carried by the access token. Optional because tokens
   // issued before the profile fields existed (and the system API-key user)
   // have no name — callers fall back to the username.
