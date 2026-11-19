@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { resolveTenantClaims } from '../tenant-context';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -36,26 +37,31 @@ export class JwtAuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<{
-      headers: Record<string, string>;
+      headers: Record<string, string | string[] | undefined>;
       user?: unknown;
     }>();
 
     // Allow internal service-to-service calls via API key
-    const apiKey = request.headers['x-api-key'];
+    const rawApiKey = request.headers['x-api-key'];
+    const apiKey = Array.isArray(rawApiKey) ? rawApiKey[0] : rawApiKey;
     const internalKey = this.configService.get<string>('INTERNAL_API_KEY');
     if (apiKey && internalKey && apiKey === internalKey) {
-      request.user = {
-        sub: 'system',
-        organizationId: '',
-        username: 'system',
-        roles: ['super_admin'],
-        permissions: [],
-      };
+      request.user = resolveTenantClaims(
+        {
+          sub: 'system',
+          organizationId: '',
+          username: 'system',
+          roles: ['super_admin'],
+          permissions: [],
+        },
+        request.headers,
+      );
       this.logger.debug(`Internal service-to-service call authenticated (system)`);
       return true;
     }
 
-    const authHeader = request.headers.authorization;
+    const rawAuthHeader = request.headers.authorization;
+    const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
     if (!authHeader?.startsWith('Bearer ')) {
       this.logger.warn(
         `Authentication failed: missing bearer token (path=${(request as Record<string, unknown>).url ?? 'unknown'}, user=${this.userLabel(request)})`,
@@ -74,7 +80,10 @@ export class JwtAuthGuard implements CanActivate {
       throw new InternalServerErrorException('JWT_ACCESS_SECRET is not configured');
     }
     try {
-      request.user = await this.jwtService.verifyAsync(token, { secret });
+      const payload = await this.jwtService.verifyAsync<Record<string, any>>(token, { secret });
+      // Normalise `organizationId: ""` to null and apply super-admin header
+      // overrides so no consumer receives a blank uuid.
+      request.user = resolveTenantClaims(payload, request.headers);
       this.logger.debug(`Access token verified for user=${this.userLabel(request)}`);
       return true;
     } catch (error) {
