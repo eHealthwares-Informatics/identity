@@ -39,16 +39,16 @@ const REFERENCE_SOURCES: ReferenceSource[] = [
   },
   {
     name: 'seed org template (role grants)',
-    path: 'seed/src/provision/org-template.ts',
+    path: 'seed/src/provision/org-template.json',
     namespaces: ['rxsoft', 'shop', 'identity', 'admin', 'lis', 'emr', 'conversation', 'communication'],
   },
   {
-    // Identity has its own provisioner and its own copy of the template. They
-    // are deliberate duplicates, so they drift — this one still had the 18 `.*`
-    // grants after the seed copy moved to parent grants, which would have
-    // regressed rxsoft-qa#798 for anyone provisioned through identity.
+    // Identity owns runtime provisioning in production; seed keeps a
+    // byte-identical template copy for its local CLI/e2e provisioner. Both are
+    // checked so a code added to one side cannot silently miss the catalog.
+    // (scripts/check-provision-drift.mjs enforces the copies stay identical.)
     name: 'identity provision template (role grants)',
-    path: 'identity/src/modules/provision/org-template.ts',
+    path: 'identity/src/modules/provision/org-template.json',
     namespaces: ['rxsoft', 'shop', 'identity', 'admin', 'lis', 'emr', 'conversation', 'communication'],
   },
 ];
@@ -70,8 +70,12 @@ function catalogCodes(): string[] {
 function extractCodes(source: string, namespaces: string[]): Set<string> {
   const codes = new Set<string>();
   // Require at least one dot-segment: a bare `'admin'` / `'identity'` literal is
-  // a role code or module id, not a permission code.
-  const pattern = new RegExp(`'((?:${namespaces.join('|')})(?:\\.[a-z0-9_*-]+)+)'`, 'g');
+  // a role code or module id, not a permission code. Templates are JSON
+  // (double-quoted), TS/TSX references are single-quoted — accept both.
+  const pattern = new RegExp(
+    `['"]((?:${namespaces.join('|')})(?:\\.[a-z0-9_*-]+)+)['"]`,
+    'g',
+  );
 
   for (const match of source.matchAll(pattern)) {
     codes.add(match[1]);

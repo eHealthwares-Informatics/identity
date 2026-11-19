@@ -1,0 +1,422 @@
+{
+  "defaultOrganizationId": "df3b4afd-9955-4617-9a82-264cc73dd8b2",
+  "roles": {
+    "admin": {
+      "name": "Administrator",
+      "description": "Organisation owner — full business access within the organisation",
+      "permissions": [
+        "rxsoft",
+        "rxsoft.identity",
+        "rxsoft.admin",
+        "rxsoft.catalog",
+        "rxsoft.sales",
+        "rxsoft.inventory",
+        "rxsoft.purchases",
+        "rxsoft.receivables",
+        "rxsoft.reports",
+        "rxsoft.website",
+        "lis",
+        "emr",
+        "conversation",
+        "communication",
+        "coding-concept"
+      ]
+    },
+    "cashier": {
+      "name": "Cashier",
+      "description": "Point-of-sale operator — run sales, view items and stock",
+      "permissions": [
+        "rxsoft.catalog.item.read",
+        "rxsoft.sales.sale.create",
+        "rxsoft.sales.sale.read",
+        "rxsoft.inventory.stock.read",
+        "shop.pos",
+        "shop.pos.dispense"
+      ]
+    },
+    "hr_human": {
+      "name": "Human Resource",
+      "description": "Human resource manager — people management",
+      "permissions": [
+        "rxsoft.admin.people.read"
+      ]
+    },
+    "cashier_admin": {
+      "name": "Cashier Admin",
+      "description": "Cashier administrator — admin access to orders and sales",
+      "permissions": [
+        "rxsoft.admin.$module_admin",
+        "rxsoft.sales.$module_admin",
+        "rxsoft.sales.sale.read",
+        "rxsoft.sales.sale.create"
+      ]
+    },
+    "pharmacist": {
+      "name": "Pharmacist",
+      "description": "Catalogue maintainer — items, pricing, inventory visibility, dispenses orders",
+      "permissions": [
+        "rxsoft.catalog.item.create",
+        "rxsoft.catalog.item.read",
+        "rxsoft.catalog.item.update",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.sales.sale.read",
+        "rxsoft.sales.sale.create",
+        "rxsoft.reports",
+        "shop.pos",
+        "shop.pos.dispense"
+      ]
+    },
+    "pharmacist_assistant": {
+      "name": "Pharmacist Assistant",
+      "description": "Dispenses prescriptions at the point of sale",
+      "permissions": [
+        "rxsoft.catalog.item.read",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.sales.sale.read",
+        "rxsoft.sales.sale.create",
+        "shop.pos",
+        "shop.pos.dispense"
+      ]
+    },
+    "manager": {
+      "name": "Manager",
+      "description": "Ops manager — purchases, receivables, reporting",
+      "permissions": [
+        "rxsoft.purchases.order.create",
+        "rxsoft.purchases.order.read",
+        "rxsoft.purchases.order.update",
+        "rxsoft.sales.sale.read",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.receivables.transaction.read",
+        "rxsoft.receivables.transaction.create",
+        "rxsoft.reports"
+      ]
+    },
+    "inventory_manager": {
+      "name": "Inventory Manager",
+      "description": "Inventory manager — stock and purchasing",
+      "permissions": [
+        "rxsoft.purchases.order.create",
+        "rxsoft.purchases.order.read",
+        "rxsoft.purchases.order.update",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.inventory.stock.adjust",
+        "rxsoft.inventory.stock.transfer"
+      ]
+    },
+    "inventory_clerk": {
+      "name": "Inventory Clerk",
+      "description": "Stock keeper — balances, adjustments, transfers",
+      "permissions": [
+        "rxsoft.catalog.item.read",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.inventory.stock.adjust",
+        "rxsoft.inventory.stock.transfer"
+      ]
+    },
+    "auditor": {
+      "name": "Auditor",
+      "description": "Read-only reviewer across the business",
+      "permissions": [
+        "rxsoft.catalog.item.read",
+        "rxsoft.sales.sale.read",
+        "rxsoft.inventory.stock.read",
+        "rxsoft.receivables.transaction.read",
+        "rxsoft.reports",
+        "rxsoft.admin.audit.read",
+        "lis.order.read",
+        "lis.result.read",
+        "conversation.read",
+        "communication.read",
+        "coding-concept.read"
+      ]
+    },
+    "customer": {
+      "name": "Customer",
+      "description": "Storefront customer",
+      "permissions": [
+        "rxsoft.catalog.item.read",
+        "rxsoft.website.content.read",
+        "rxsoft.website.orders.read",
+        "rxsoft.website.reviews.create"
+      ]
+    },
+    "mobile_shopper": {
+      "name": "Mobile Shopper",
+      "description": "Self-onboarded mobile storefront shopper (phone/OTP)",
+      "permissions": []
+    }
+  },
+  "users": [
+    {
+      "suffix": "OWNER",
+      "roles": [
+        "admin"
+      ],
+      "locationCode": "STORE"
+    },
+    {
+      "suffix": "CASHIER",
+      "roles": [
+        "cashier"
+      ],
+      "locationCode": "STORE"
+    },
+    {
+      "suffix": "PHARMACIST",
+      "roles": [
+        "pharmacist"
+      ],
+      "locationCode": "STORE"
+    },
+    {
+      "suffix": "PHARMACIST_ASSISTANT",
+      "roles": [
+        "pharmacist_assistant"
+      ],
+      "locationCode": "STORE"
+    }
+  ],
+  "departments": [
+    {
+      "code": "OUTPATIENT",
+      "name": "Outpatient Department",
+      "type": "OPD",
+      "description": "General outpatient clinic and consultations"
+    },
+    {
+      "code": "INPATIENT",
+      "name": "Inpatient (Wards)",
+      "type": "INPATIENT",
+      "description": "Inpatient wards and nursing units"
+    },
+    {
+      "code": "EMERGENCY",
+      "name": "Emergency Department",
+      "type": "EMERGENCY",
+      "description": "Accident and emergency care"
+    },
+    {
+      "code": "ECU",
+      "name": "Emergency Care Unit",
+      "type": "EMERGENCY",
+      "description": "Emergency critical care and observation"
+    },
+    {
+      "code": "LABORATORY",
+      "name": "Laboratory",
+      "type": "LABORATORY",
+      "description": "Clinical laboratory services"
+    },
+    {
+      "code": "BLOODBANK",
+      "name": "Blood Bank",
+      "type": "LABORATORY",
+      "description": "Blood collection, testing and storage"
+    },
+    {
+      "code": "PHARMACY",
+      "name": "Pharmacy",
+      "type": "PHARMACY",
+      "description": "Main dispensary and pharmacy services"
+    },
+    {
+      "code": "RADIOLOGY",
+      "name": "Radiology",
+      "type": "RADIOLOGY",
+      "description": "Imaging and radiology services"
+    },
+    {
+      "code": "MATERNITY",
+      "name": "Maternity / OB-GYN",
+      "type": "MATERNITY",
+      "description": "Antenatal, delivery and postnatal care"
+    },
+    {
+      "code": "PAEDIATRICS",
+      "name": "Paediatrics",
+      "type": "OPD",
+      "description": "Care for infants, children and adolescents"
+    },
+    {
+      "code": "SURGICAL-OPD",
+      "name": "Surgical Outpatient",
+      "type": "OPD",
+      "description": "Surgical consultations and minor procedures"
+    },
+    {
+      "code": "THEATRE",
+      "name": "Theatre",
+      "type": "OTHER",
+      "description": "Operating theatres and recovery"
+    },
+    {
+      "code": "ICU",
+      "name": "Intensive Care Unit",
+      "type": "INPATIENT",
+      "description": "Critical care and intensive monitoring"
+    },
+    {
+      "code": "DIALYSIS",
+      "name": "Dialysis Unit",
+      "type": "SUPPORT",
+      "description": "Haemodialysis and related support care"
+    },
+    {
+      "code": "PHYSIOTHERAPY",
+      "name": "Physiotherapy",
+      "type": "SUPPORT",
+      "description": "Rehabilitation and physiotherapy services"
+    },
+    {
+      "code": "OPHTHALMOLOGY",
+      "name": "Ophthalmology",
+      "type": "OPD",
+      "description": "Eye clinics and vision care"
+    },
+    {
+      "code": "DENTAL",
+      "name": "Dental Clinic",
+      "type": "OPD",
+      "description": "Dental and oral health services"
+    },
+    {
+      "code": "RECORDS",
+      "name": "Records",
+      "type": "SUPPORT",
+      "description": "Health information and medical records"
+    },
+    {
+      "code": "FINANCE",
+      "name": "Finance",
+      "type": "SUPPORT",
+      "description": "Billing, revenue and financial services"
+    },
+    {
+      "code": "MORTUARY",
+      "name": "Mortuary",
+      "type": "SUPPORT",
+      "description": "Mortuary and bereavement services"
+    }
+  ],
+  "wards": [
+    {
+      "departmentCode": "INPATIENT",
+      "code": "INP-MALE",
+      "name": "Male Ward",
+      "type": "GENERAL"
+    },
+    {
+      "departmentCode": "INPATIENT",
+      "code": "INP-FEMALE",
+      "name": "Female Ward",
+      "type": "GENERAL"
+    },
+    {
+      "departmentCode": "ICU",
+      "code": "ICU-MALE",
+      "name": "Male ICU",
+      "type": "ICU"
+    },
+    {
+      "departmentCode": "ICU",
+      "code": "ICU-FEMALE",
+      "name": "Female ICU",
+      "type": "ICU"
+    }
+  ],
+  "bedsPerWard": 6,
+  "demoBedStatuses": {
+    "INP-MALE-01": "OCCUPIED",
+    "INP-FEMALE-01": "OCCUPIED",
+    "INP-MALE-06": "MAINTENANCE"
+  },
+  "demoPatients": [
+    {
+      "patientId": "MRN-DEMO-001",
+      "firstName": "Chidi",
+      "lastName": "Okonkwo",
+      "gender": "MALE",
+      "dateOfBirth": "1981-04-12",
+      "phone": "08011100001"
+    },
+    {
+      "patientId": "MRN-DEMO-002",
+      "firstName": "Amina",
+      "lastName": "Bello",
+      "gender": "FEMALE",
+      "dateOfBirth": "1990-09-03",
+      "phone": "08011100002"
+    },
+    {
+      "patientId": "MRN-DEMO-003",
+      "firstName": "Emeka",
+      "lastName": "Nwosu",
+      "gender": "MALE",
+      "dateOfBirth": "1975-01-27",
+      "phone": "08011100003"
+    },
+    {
+      "patientId": "MRN-DEMO-004",
+      "firstName": "Fatima",
+      "lastName": "Yusuf",
+      "gender": "FEMALE",
+      "dateOfBirth": "1986-11-19",
+      "phone": "08011100004"
+    },
+    {
+      "patientId": "MRN-DEMO-005",
+      "firstName": "Tunde",
+      "lastName": "Adeyemi",
+      "gender": "MALE",
+      "dateOfBirth": "1968-06-08",
+      "phone": "08011100005"
+    },
+    {
+      "patientId": "MRN-DEMO-006",
+      "firstName": "Ngozi",
+      "lastName": "Okafor",
+      "gender": "FEMALE",
+      "dateOfBirth": "1993-02-25",
+      "phone": "08011100006"
+    }
+  ],
+  "demoAdmissions": [
+    {
+      "admissionNumber": "ADM-DEMO-001",
+      "patientMrn": "MRN-DEMO-001",
+      "wardCode": "INP-MALE",
+      "bedCode": "INP-MALE-01",
+      "admissionType": "MEDICAL",
+      "diagnosis": "Community-acquired pneumonia",
+      "admittedDaysAgo": 3,
+      "status": "ADMITTED"
+    },
+    {
+      "admissionNumber": "ADM-DEMO-002",
+      "patientMrn": "MRN-DEMO-002",
+      "wardCode": "INP-FEMALE",
+      "bedCode": "INP-FEMALE-01",
+      "admissionType": "SURGICAL",
+      "diagnosis": "Post-appendectomy recovery",
+      "admittedDaysAgo": 1,
+      "status": "ADMITTED"
+    },
+    {
+      "admissionNumber": "ADM-DEMO-003",
+      "patientMrn": "MRN-DEMO-003",
+      "wardCode": "INP-MALE",
+      "bedCode": "INP-MALE-02",
+      "admissionType": "URGENT",
+      "diagnosis": "Uncontrolled hypertension",
+      "admittedDaysAgo": 9,
+      "status": "DISCHARGED",
+      "dischargeType": "DISCHARGED_HOME",
+      "dischargeSummary": "Blood pressure stabilised on oral medication; follow-up in OPD in two weeks."
+    }
+  ],
+  "locationHqCode": "HQ",
+  "locationHqName": "Headquarters",
+  "locationStoreSuffix": "STORE",
+  "retailPriceListCode": "RETAIL"
+}

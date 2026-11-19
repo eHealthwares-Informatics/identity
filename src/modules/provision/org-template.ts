@@ -1,16 +1,22 @@
-// Provisioning templates for onboarding a new organisation.
+// Provisioning template for onboarding a new organisation.
 //
-// The provisioning service creates a fully usable tenant (identity roles,
-// users + rxsoft reference data: item whitelist, retail price list, stock
-// locations, opening balances, parties, POS configs). Roles/permissions here
-// intentionally mirror the DEFAULT org seed (seed/seeds/identity/inline) and
-// only reference permission codes that exist in the identity permissions table
-// — unknown codes are skipped with a warning, never routed to an error.
+// This file is a thin typed wrapper around `org-template.json`, which is the
+// single source of tenant reference data. Identity owns runtime provisioning
+// (production must not depend on the seed service), while seed keeps a
+// byte-identical copy for its local CLI/e2e provisioner. The copies are
+// intentionally duplicated so each service can ship standalone; the root
+// `scripts/check-provision-drift.mjs` fails the build when they diverge.
+//
+// Roles grant parent/leaf permission codes from the identity catalog. Unknown
+// codes are skipped with a warning by the provisioner, never routed to the
+// NOT_FOUND sentinel.
+
+import * as template from './org-template.json';
 
 // Stable id of the seeded DEFAULT org (seed/seeds/identity/inline/
 // organizations.json code DEFAULT_ORG). Used to carry legacy org-level item
 // codes onto newly whitelisted organisations.
-export const DEFAULT_ORGANIZATION_ID = 'df3b4afd-9955-4617-9a82-264cc73dd8b2';
+export const DEFAULT_ORGANIZATION_ID: string = template.defaultOrganizationId;
 
 export interface RoleTemplate {
   name: string;
@@ -18,175 +24,20 @@ export interface RoleTemplate {
   permissions: string[];
 }
 
-// Role -> permission set. `admin` owns the organisation (all business modules
-// but not the platform `*` / org-creation boundary, which stays with the
-// global super_admin). Operational roles match the guard names rxsoft's
-// controllers @Roles lists.
-export const ORG_TEMPLATE_ROLES: Record<string, RoleTemplate> = {
-  admin: {
-    name: 'Administrator',
-    description: 'Organisation owner — full business access within the organisation',
-    permissions: [
-      'rxsoft',
-      'rxsoft.identity',
-      'rxsoft.admin',
-      'rxsoft.catalog',
-      'rxsoft.sales',
-      'rxsoft.inventory',
-      'rxsoft.purchases',
-      'rxsoft.receivables',
-      'rxsoft.reports',
-      'rxsoft.website',
-      'lis',
-      'emr',
-      'conversation',
-      'communication',
-      'coding-concept',
-    ],
-  },
-  cashier: {
-    name: 'Cashier',
-    description: 'Point-of-sale operator — run sales, view items and stock',
-    permissions: [
-      'rxsoft.catalog.item.read',
-      'rxsoft.sales.sale.create',
-      'rxsoft.sales.sale.read',
-      'rxsoft.inventory.stock.read',
-      'shop.pos',
-      'shop.pos.dispense',
-    ],
-  },
-  hr_human: {
-    name: 'Human Resource',
-    description: 'Human resource manager — people management',
-    permissions: [
-      'rxsoft.admin.people.read',
-    ],
-  },
-  cashier_admin: {
-    name: 'Cashier Admin',
-    description: 'Cashier administrator — admin access to orders and sales',
-    permissions: [
-      'rxsoft.admin.$module_admin',
-      'rxsoft.sales.$module_admin',
-      'rxsoft.sales.sale.read',
-      'rxsoft.sales.sale.create',
-    ],
-  },
-  pharmacist: {
-    name: 'Pharmacist',
-    description: 'Catalogue maintainer — items, pricing, inventory visibility, dispenses orders',
-    permissions: [
-      'rxsoft.catalog.item.create',
-      'rxsoft.catalog.item.read',
-      'rxsoft.catalog.item.update',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.sales.sale.read',
-      'rxsoft.sales.sale.create',
-      'rxsoft.reports',
-    ],
-  },
-  pharmacist_assistant: {
-    name: 'Pharmacist Assistant',
-    description: 'Dispenses prescriptions at the point of sale',
-    permissions: [
-      'rxsoft.catalog.item.read',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.sales.sale.read',
-      'rxsoft.sales.sale.create',
-    ],
-  },
-  manager: {
-    name: 'Manager',
-    description: 'Ops manager — purchases, receivables, reporting',
-    permissions: [
-      'rxsoft.purchases.order.create',
-      'rxsoft.purchases.order.read',
-      'rxsoft.purchases.order.update',
-      'rxsoft.sales.sale.read',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.receivables.transaction.read',
-      'rxsoft.receivables.transaction.create',
-      'rxsoft.reports',
-    ],
-  },
-  inventory_manager: {
-    name: 'Inventory Manager',
-    description: 'Inventory manager — stock and purchasing',
-    permissions: [
-      'rxsoft.purchases.order.create',
-      'rxsoft.purchases.order.read',
-      'rxsoft.purchases.order.update',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.inventory.stock.adjust',
-      'rxsoft.inventory.stock.transfer',
-    ],
-  },
-  inventory_clerk: {
-    name: 'Inventory Clerk',
-    description: 'Stock keeper — balances, adjustments, transfers',
-    permissions: [
-      'rxsoft.catalog.item.read',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.inventory.stock.adjust',
-      'rxsoft.inventory.stock.transfer',
-    ],
-  },
-  auditor: {
-    name: 'Auditor',
-    description: 'Read-only reviewer across the business',
-    permissions: [
-      'rxsoft.catalog.item.read',
-      'rxsoft.sales.sale.read',
-      'rxsoft.inventory.stock.read',
-      'rxsoft.receivables.transaction.read',
-      'rxsoft.reports',
-      'rxsoft.admin.audit.read',
-      'lis.order.read',
-      'lis.result.read',
-      'conversation.read',
-      'communication.read',
-      'coding-concept.read',
-    ],
-  },
-  customer: {
-    name: 'Customer',
-    description: 'Storefront customer',
-    permissions: [
-      'rxsoft.catalog.item.read',
-      'rxsoft.website.content.read',
-      'rxsoft.website.orders.read',
-      'rxsoft.website.reviews.create',
-    ],
-  },
-  mobile_shopper: {
-    name: 'Mobile Shopper',
-    description: 'Self-onboarded mobile storefront shopper (phone/OTP)',
-    permissions: [],
-  },
-};
+export const ORG_TEMPLATE_ROLES = template.roles as unknown as Record<string, RoleTemplate>;
 
-// Which users to create for the organisation (usernames are namespaced:
-// <ORGCODE>_<SUFFIX>). Kept small for the POS/orders/purchases workflows.
 export interface UserTemplate {
   suffix: string;
   roles: string[];
   locationCode: string;
 }
 
-export const ORG_TEMPLATE_USERS: UserTemplate[] = [
-  { suffix: 'OWNER', roles: ['admin'], locationCode: 'STORE' },
-  { suffix: 'CASHIER', roles: ['cashier'], locationCode: 'STORE' },
-  { suffix: 'PHARMACIST', roles: ['pharmacist'], locationCode: 'STORE' },
-  { suffix: 'PHARMACIST_ASSISTANT', roles: ['pharmacist_assistant'], locationCode: 'STORE' },
-];
+export const ORG_TEMPLATE_USERS = template.users as unknown as UserTemplate[];
 
-export const LOCATION_HQ_CODE = 'HQ';
-export const LOCATION_HQ_NAME = 'Headquarters';
-export const LOCATION_STORE_SUFFIX = 'STORE';
+export const LOCATION_HQ_CODE: string = template.locationHqCode;
+export const LOCATION_HQ_NAME: string = template.locationHqName;
+export const LOCATION_STORE_SUFFIX: string = template.locationStoreSuffix;
 
-// Default EMR departments provisioned at a new organisation's HQ site
-// (written to the emr database).
 export interface DepartmentTemplate {
   code: string;
   name: string;
@@ -194,22 +45,10 @@ export interface DepartmentTemplate {
   description: string;
 }
 
-export const DEFAULT_ORG_DEPARTMENTS: DepartmentTemplate[] = [
-  { code: 'OUTPATIENT', name: 'Outpatient Department', type: 'OPD', description: 'General outpatient clinic and consultations' },
-  { code: 'INPATIENT', name: 'Inpatient (Wards)', type: 'INPATIENT', description: 'Inpatient wards and nursing units' },
-  { code: 'EMERGENCY', name: 'Emergency Department', type: 'EMERGENCY', description: 'Accident and emergency care' },
-  { code: 'LABORATORY', name: 'Laboratory', type: 'LABORATORY', description: 'Clinical laboratory services' },
-  { code: 'PHARMACY', name: 'Pharmacy', type: 'PHARMACY', description: 'Main dispensary and pharmacy services' },
-  { code: 'RADIOLOGY', name: 'Radiology', type: 'RADIOLOGY', description: 'Imaging and radiology services' },
-  { code: 'MATERNITY', name: 'Maternity', type: 'MATERNITY', description: 'Antenatal, delivery and postnatal care' },
-];
+export const DEFAULT_ORG_DEPARTMENTS =
+  template.departments as unknown as DepartmentTemplate[];
 
-// Provisioned organisations price/stock EVERY whitelisted item: retail prices
-// are read from resources/price_list_items.json (optional generated mirror,
-// empty by default) with a deterministic fallback, and opening stock/cost are
-// derived. See provision.service.ts (loadRetailPrices / retailFor / openingFor).
-
-export const RETAIL_PRICE_LIST_CODE = 'RETAIL';
+export const RETAIL_PRICE_LIST_CODE: string = template.retailPriceListCode;
 
 export interface WardTemplate {
   departmentCode: string;
@@ -218,22 +57,13 @@ export interface WardTemplate {
   type: string;
 }
 
-export const DEFAULT_ORG_WARDS: WardTemplate[] = [
-  { departmentCode: 'INPATIENT', code: 'INP-MALE', name: 'Male Ward', type: 'GENERAL' },
-  { departmentCode: 'INPATIENT', code: 'INP-FEMALE', name: 'Female Ward', type: 'GENERAL' },
-  { departmentCode: 'ICU', code: 'ICU-MALE', name: 'Male ICU', type: 'ICU' },
-  { departmentCode: 'ICU', code: 'ICU-FEMALE', name: 'Female ICU', type: 'ICU' },
-];
+export const DEFAULT_ORG_WARDS = template.wards as unknown as WardTemplate[];
 
 /** Beds provisioned per ward (codes `<WARD>-01`…`<WARD>-0N`, STANDARD type). */
-export const BEDS_PER_WARD = 6;
+export const BEDS_PER_WARD: number = template.bedsPerWard;
 
 /** Bed code → status overrides (the rest stay AVAILABLE). */
-export const DEMO_BED_STATUSES: Record<string, string> = {
-  'INP-MALE-01': 'OCCUPIED',
-  'INP-FEMALE-01': 'OCCUPIED',
-  'INP-MALE-06': 'MAINTENANCE',
-};
+export const DEMO_BED_STATUSES: Record<string, string> = template.demoBedStatuses;
 
 export interface DemoPatientTemplate {
   patientId: string;
@@ -244,14 +74,7 @@ export interface DemoPatientTemplate {
   phone: string;
 }
 
-export const DEMO_ORG_PATIENTS: DemoPatientTemplate[] = [
-  { patientId: 'MRN-DEMO-001', firstName: 'Chidi', lastName: 'Okonkwo', gender: 'MALE', dateOfBirth: '1981-04-12', phone: '08011100001' },
-  { patientId: 'MRN-DEMO-002', firstName: 'Amina', lastName: 'Bello', gender: 'FEMALE', dateOfBirth: '1990-09-03', phone: '08011100002' },
-  { patientId: 'MRN-DEMO-003', firstName: 'Emeka', lastName: 'Nwosu', gender: 'MALE', dateOfBirth: '1975-01-27', phone: '08011100003' },
-  { patientId: 'MRN-DEMO-004', firstName: 'Fatima', lastName: 'Yusuf', gender: 'FEMALE', dateOfBirth: '1986-11-19', phone: '08011100004' },
-  { patientId: 'MRN-DEMO-005', firstName: 'Tunde', lastName: 'Adeyemi', gender: 'MALE', dateOfBirth: '1968-06-08', phone: '08011100005' },
-  { patientId: 'MRN-DEMO-006', firstName: 'Ngozi', lastName: 'Okafor', gender: 'FEMALE', dateOfBirth: '1993-02-25', phone: '08011100006' },
-];
+export const DEMO_ORG_PATIENTS = template.demoPatients as unknown as DemoPatientTemplate[];
 
 export interface DemoAdmissionTemplate {
   admissionNumber: string;
@@ -267,42 +90,5 @@ export interface DemoAdmissionTemplate {
   dischargeSummary?: string;
 }
 
-export const DEMO_ORG_ADMISSIONS: DemoAdmissionTemplate[] = [
-  {
-    admissionNumber: 'ADM-DEMO-001',
-    patientMrn: 'MRN-DEMO-001',
-    wardCode: 'INP-MALE',
-    bedCode: 'INP-MALE-01',
-    admissionType: 'MEDICAL',
-    diagnosis: 'Community-acquired pneumonia',
-    admittedDaysAgo: 3,
-    status: 'ADMITTED',
-  },
-  {
-    admissionNumber: 'ADM-DEMO-002',
-    patientMrn: 'MRN-DEMO-002',
-    wardCode: 'INP-FEMALE',
-    bedCode: 'INP-FEMALE-01',
-    admissionType: 'SURGICAL',
-    diagnosis: 'Post-appendectomy recovery',
-    admittedDaysAgo: 1,
-    status: 'ADMITTED',
-  },
-  {
-    admissionNumber: 'ADM-DEMO-003',
-    patientMrn: 'MRN-DEMO-003',
-    wardCode: 'INP-MALE',
-    bedCode: 'INP-MALE-02',
-    admissionType: 'URGENT',
-    diagnosis: 'Uncontrolled hypertension',
-    admittedDaysAgo: 9,
-    status: 'DISCHARGED',
-    dischargeType: 'DISCHARGED_HOME',
-    dischargeSummary: 'Blood pressure stabilised on oral medication; follow-up in OPD in two weeks.',
-  },
-];
-
-// Provisioned organisations price/stock EVERY whitelisted item: retail prices
-// are read from the generated price_list_items.json (seeds/backend/inline) with
-// a deterministic fallback, and opening stock/cost are derived. See
-// provision.service.ts (loadRetailPrices / retailFor / openingFor).
+export const DEMO_ORG_ADMISSIONS =
+  template.demoAdmissions as unknown as DemoAdmissionTemplate[];

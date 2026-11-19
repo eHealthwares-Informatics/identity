@@ -34,6 +34,17 @@ export interface ProvisionStatus {
   exists: boolean;
   code: string;
   organizationId: string | null;
+  /**
+   * Row counts for the tables the provisioner writes. Used by the onboarding
+   * e2e to prove a real tenant was created (and torn down) without needing the
+   * rxsoft/EMR services running. `-1` means the count could not be read (table
+   * missing / query failed) — callers should treat that as drift, not zero.
+   */
+  counts?: {
+    identity: Record<string, number>;
+    backend: Record<string, number>;
+    emr: Record<string, number>;
+  };
 }
 
 // Result of a teardown. `deprovisioned` is only true when every table was

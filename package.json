@@ -10,7 +10,8 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "seed:permissions": "node dist/seed-permissions.js",
-    "check:catalog": "node dist/scripts/check-catalog-coverage.js"
+    "check:catalog": "node dist/scripts/check-catalog-coverage.js",
+    "check:drift": "node ../scripts/check-provision-drift.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
