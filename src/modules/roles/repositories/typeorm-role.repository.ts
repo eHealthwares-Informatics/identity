@@ -16,9 +16,22 @@ export class TypeormRoleRepository implements RoleRepository {
     private readonly permissionRepository: Repository<PermissionOrmEntity>,
   ) {}
 
+  /**
+   * A super-admin / system token carries `organizationId: ''`. Blank means
+   * "global — no organisation scope" and must never be bound as a uuid filter
+   * (`invalid input syntax for type uuid: ""`).
+   */
+  private scopedOrganizationId(organizationId?: string | null): string | undefined {
+    const value = typeof organizationId === 'string' ? organizationId.trim() : '';
+    return value ? value : undefined;
+  }
+
   async findLastCreated(organizationId: string): Promise<Pick<Role, 'code'> | null> {
+    const where: any = {};
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) where.organizationId = org;
     const role = await this.roleRepository.findOne({
-      where: { organizationId },
+      where,
       order: { createdAt: 'DESC' },
       select: ['code'],
     });
@@ -26,16 +39,22 @@ export class TypeormRoleRepository implements RoleRepository {
   }
 
   async findByCode(code: string, organizationId: string): Promise<Role | null> {
+    const where: any = { code };
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) where.organizationId = org;
     const item = await this.roleRepository.findOne({
-      where: { code, organizationId },
+      where,
       relations: { permissions: true },
     });
     return item ? IdentityMapper.toDomainRole(item) : null;
   }
 
   async findById(id: string, organizationId: string): Promise<Role | null> {
+    const where: any = { id };
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) where.organizationId = org;
     const item = await this.roleRepository.findOne({
-      where: { id, organizationId },
+      where,
       relations: { permissions: true },
     });
     return item ? IdentityMapper.toDomainRole(item) : null;
@@ -135,7 +154,10 @@ export class TypeormRoleRepository implements RoleRepository {
   }
 
   async delete(id: string, organizationId: string): Promise<void> {
-    const orm = await this.roleRepository.findOne({ where: { id, organizationId } });
+    const where: any = { id };
+    const org = this.scopedOrganizationId(organizationId);
+    if (org) where.organizationId = org;
+    const orm = await this.roleRepository.findOne({ where });
     if (!orm) throw new NotFoundException('Role not found');
     await this.roleRepository.remove(orm);
   }

@@ -19,6 +19,7 @@ import { TypeormRefreshTokenRepository } from './repositories/typeorm-refresh-to
 import { TypeormUserRepository } from '../users/repositories/typeorm-user.repository';
 import { TypeormRoleRepository } from '../roles/repositories/typeorm-role.repository';
 import { TypeormLocationRepository } from '../locations/repositories/typeorm-location.repository';
+import { TypeormOrganizationRepository } from '../organizations/repositories/typeorm-organization.repository';
 import { RefreshTokenOrmEntity } from './entities/refresh-token.orm-entity';
 import { PhoneOtpOrmEntity } from './entities/phone-otp.orm-entity';
 import { AuthActionTokenOrmEntity } from './entities/auth-action-token.orm-entity';
@@ -31,6 +32,7 @@ import { OrganizationOrmEntity } from '../organizations/entities/organization.or
 import { ProvisionModule } from '../provision/provision.module';
 import {
   LOCATION_REPOSITORY,
+  ORG_REPOSITORY,
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
@@ -74,10 +76,12 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     TypeormUserRepository,
     TypeormRoleRepository,
     TypeormLocationRepository,
+    TypeormOrganizationRepository,
     TypeormRefreshTokenRepository,
     { provide: USER_REPOSITORY, useExisting: TypeormUserRepository },
     { provide: ROLE_REPOSITORY, useExisting: TypeormRoleRepository },
     { provide: LOCATION_REPOSITORY, useExisting: TypeormLocationRepository },
+    { provide: ORG_REPOSITORY, useExisting: TypeormOrganizationRepository },
     { provide: REFRESH_TOKEN_REPOSITORY, useExisting: TypeormRefreshTokenRepository },
     { provide: PASSWORD_HASHER, useClass: ScryptPasswordHasherService },
     { provide: TOKEN_HASHER, useClass: Sha256PasswordHasherService },

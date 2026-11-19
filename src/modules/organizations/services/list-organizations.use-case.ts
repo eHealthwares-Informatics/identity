@@ -9,7 +9,7 @@ export class ListOrganizationsUseCase {
     private readonly organizationRepository: OrganizationRepository,
   ) {}
 
-  execute(offset: number, limit: number, search?: string) {
-    return this.organizationRepository.list({ offset, limit, search });
+  execute(offset: number, limit: number, search?: string, organizationId?: string | null) {
+    return this.organizationRepository.list({ offset, limit, search, organizationId });
   }
 }

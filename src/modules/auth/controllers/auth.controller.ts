@@ -133,10 +133,13 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate and issue access/refresh tokens' })
-  async login(@Body() payload: LoginDto): Promise<AuthResponseDto> {
+  async login(
+    @Body() payload: LoginDto,
+    @Headers('x-organization-id') organizationHeader?: string,
+  ): Promise<AuthResponseDto> {
     this.logger.log(`Login attempt: username=${payload.username}`);
     try {
-      const result = await this.loginUseCase.execute(payload);
+      const result = await this.loginUseCase.execute(payload, organizationHeader);
       this.logger.log(`Login succeeded: username=${payload.username}`);
       return result;
     } catch (error) {

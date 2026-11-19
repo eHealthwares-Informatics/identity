@@ -2,14 +2,17 @@ import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { compressPermissions } from '../../../common/utils/permission-set';
+import { normalizeTenantId } from '../../../common/tenant-context';
 import { LoginDto } from '../dto/login.dto';
 import type { UserRepository } from '../../users/repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
+import type { OrganizationRepository } from '../../organizations/repositories/organization.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../../auth/repositories/refresh-token.repository';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import {
+  ORG_REPOSITORY,
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
@@ -30,6 +33,8 @@ export class LoginUseCase {
     private readonly tokenIssuer: TokenIssuerPort,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    @Inject(ORG_REPOSITORY)
+    private readonly organizationRepository: OrganizationRepository,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
   ) {
@@ -38,16 +43,39 @@ export class LoginUseCase {
 
   private readonly logger: Logger;
 
-  async execute(payload: LoginDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
+  async execute(
+    payload: LoginDto,
+    organizationHeader?: string,
+  ): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
     const identifier = payload.username.trim();
-    this.logger.log(`Login attempt: identifier=${identifier}`);
+
+    // Resolve the tenant scope. Usernames are only unique per organisation
+    // (`uq_users_org_username`), so an unscoped lookup is ambiguous across
+    // tenants. The explicit DTO field wins over the header.
+    let organizationId =
+      normalizeTenantId(payload.organizationId) ?? normalizeTenantId(organizationHeader);
+    if (payload.organizationCode) {
+      const organization = await this.organizationRepository.findByCode(
+        payload.organizationCode.trim(),
+      );
+      if (!organization) {
+        this.logger.warn(`Login failed: unknown organisation code=${payload.organizationCode}`);
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      organizationId = organization.id;
+    }
+
+    this.logger.log(
+      `Login attempt: identifier=${identifier} org=${organizationId ?? 'global'}`,
+    );
     const user = identifier.includes('@')
-      ? await this.userRepository.findByEmail(identifier.toLowerCase())
-      : await this.userRepository.findByUsername(identifier);
+      ? await this.userRepository.findByEmail(identifier.toLowerCase(), organizationId)
+      : await this.userRepository.findByUsername(identifier, organizationId);
 
     // Phone-number fallback: shoppers sign in with the phone they registered
     // with (or received an OTP on). Password must still match.
-    const resolved = user ?? (await this.userRepository.findByPhone(identifier));
+    const resolved =
+      user ?? (await this.userRepository.findByPhone(identifier, organizationId));
     if (!resolved || !resolved.isActive) {
       this.logger.warn(`Login failed: user not found or inactive (identifier=${identifier})`);
       throw new UnauthorizedException('Invalid credentials');
