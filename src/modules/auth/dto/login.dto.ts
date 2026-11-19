@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({ example: 'admin', description: 'Username' })
@@ -11,4 +11,18 @@ export class LoginDto {
   @IsString()
   @MinLength(6)
   password!: string;
+
+  /**
+   * Optional tenant scope. Takes precedence over the `x-organization-id`
+   * header. Without either, the lookup stays backwards-compatible (global).
+   */
+  @ApiPropertyOptional({ description: 'Organisation id to scope the login to' })
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
+
+  @ApiPropertyOptional({ description: 'Organisation code to scope the login to' })
+  @IsOptional()
+  @IsString()
+  organizationCode?: string;
 }

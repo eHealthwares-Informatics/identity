@@ -18,6 +18,7 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { RequestUser } from '../../../common/decorators/current-user.decorator';
+import { tenantFromUser } from '../../../common/tenant-context';
 import { ListOrganizationsUseCase } from '../services/list-organizations.use-case';
 import { GetOrganizationUseCase } from '../services/get-organization.use-case';
 import { CreateOrganizationUseCase } from '../services/create-organization.use-case';
@@ -71,11 +72,22 @@ export class OrganizationsController {
   async list(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
-    @Query('search') search?: string,
+    @Query('search') search: string | undefined,
+    @CurrentUser() currentUser: RequestUser,
   ): Promise<OrganizationsListResponse> {
-    this.logger.debug(`List organizations: page=${page} limit=${limit} search=${search ?? ''}`);
+    const tenant = tenantFromUser(currentUser);
+    this.logger.debug(
+      `List organizations: page=${page} limit=${limit} search=${search ?? ''} org=${tenant.organizationId ?? 'all'}`,
+    );
     const offset = (page - 1) * limit;
-    const result = await this.listOrganizationsUseCase.execute(offset, limit, search);
+    // Super admins see every organisation unless they selected one; a normal
+    // admin only ever sees their own organisation.
+    const result = await this.listOrganizationsUseCase.execute(
+      offset,
+      limit,
+      search,
+      tenant.organizationId,
+    );
     return {
       data: result.items.map((organization) => this.toResponse(organization)),
       meta: { page, limit, total: result.total },
@@ -85,11 +97,18 @@ export class OrganizationsController {
   @Get(':id')
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Get organization by ID' })
-  async getById(@Param('id') id: string): Promise<OrganizationResponseDto> {
-    this.logger.debug(`Get organization: id=${id}`);
+  async getById(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<OrganizationResponseDto> {
+    this.logger.debug(`Get organization: id=${id} caller=${currentUser.sub}`);
     const organization = await this.getOrganizationUseCase.execute(id);
-    if (!organization) {
-      this.logger.warn(`Organization not found: id=${id}`);
+    const tenant = tenantFromUser(currentUser);
+    if (
+      !organization ||
+      (!tenant.isSuperAdmin && tenant.organizationId !== organization.id)
+    ) {
+      this.logger.warn(`Organization not found for caller: id=${id}`);
       throw new NotFoundException('Organization not found');
     }
     return this.toResponse(organization);
