@@ -66,4 +66,28 @@ describe('compressPermissions', () => {
       'rxsoft.sales',
     ]);
   });
+
+  it('keeps a representative when a parent and its .* wildcard mutually cover', () => {
+    // Regression: `rxsoft` and `rxsoft.*` each match the other, so a naive
+    // filter dropped both — emptying the whole permission set (admin had no
+    // modules and the team switcher spun forever).
+    expect(compressPermissions(['rxsoft', 'rxsoft.*'])).toEqual(['rxsoft']);
+  });
+
+  it('does not empty a full module set that mixes parent and .* grants', () => {
+    const input = [
+      'rxsoft',
+      'rxsoft.*',
+      'rxsoft.catalog',
+      'rxsoft.catalog.item.read',
+      'rxsoft.admin',
+      'rxsoft.admin.*',
+      'emr',
+      'emr.*',
+      'emr.patient.read',
+      'lis',
+      'lis.*',
+    ];
+    expect(compressPermissions(input)).toEqual(['rxsoft', 'emr', 'lis']);
+  });
 });
