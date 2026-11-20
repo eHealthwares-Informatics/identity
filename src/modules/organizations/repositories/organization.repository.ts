@@ -4,6 +4,8 @@ export type OrganizationListOptions = {
   offset: number;
   limit: number;
   search?: string;
+  /** Restrict the list to a single organisation (non-super-admin callers). */
+  organizationId?: string | null;
 };
 
 export interface OrganizationRepository {

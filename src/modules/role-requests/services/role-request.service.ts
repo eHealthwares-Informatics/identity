@@ -118,9 +118,14 @@ export class RoleRequestService {
     action: 'approve' | 'reject',
     decidedBy: string,
     overrideRoleCode?: string,
+    organizationId?: string | null,
   ): Promise<RoleRequestView> {
     const req = await this.repo.findOne({ where: { id } });
-    if (!req) throw new NotFoundException('Role request not found');
+    // A normal admin may only decide requests belonging to their organisation.
+    // A super admin (blank org) may decide any request.
+    if (!req || (organizationId && req.organizationId !== organizationId)) {
+      throw new NotFoundException('Role request not found');
+    }
     if (req.status !== 'pending') {
       throw new BadRequestException('Request already decided');
     }

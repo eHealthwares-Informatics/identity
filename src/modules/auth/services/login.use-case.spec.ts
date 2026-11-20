@@ -82,12 +82,24 @@ describe('LoginUseCase', () => {
       save: (entity: Partial<UserLoginEventOrmEntity>) => Promise<unknown>;
     };
 
+    const organizationRepository = {
+      findByCode: jest.fn(),
+      findById: jest.fn(),
+      list: jest.fn(),
+      findAll: jest.fn(),
+      findByDomain: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
     const useCase = new LoginUseCase(
       userRepository,
       roleRepository,
       passwordHasher,
       tokenIssuer,
       refreshTokenRepository,
+      organizationRepository as never,
       loginEventRepo as never,
     );
     return { useCase, userRepository, passwordHasher, tokenIssuer, refreshTokenRepository, user };
@@ -111,7 +123,7 @@ describe('LoginUseCase', () => {
     await expect(
       useCase.execute({ username: 'nobody', password: 'x' }),
     ).rejects.toThrow(UnauthorizedException);
-    expect(userRepository.findByUsername.mock.calls[0]).toEqual(['nobody']);
+    expect(userRepository.findByUsername.mock.calls[0]).toEqual(['nobody', null]);
   });
 
   it('rejects users whose password does not match', async () => {
@@ -159,14 +171,14 @@ describe('LoginUseCase', () => {
     const { useCase, userRepository, user } = createAll();
     userRepository.findByEmail.mockResolvedValue(user);
     await useCase.execute({ username: 'Jane@Example.com', password: 'whatever' });
-    expect(userRepository.findByEmail).toHaveBeenCalledWith('jane@example.com');
+    expect(userRepository.findByEmail).toHaveBeenCalledWith('jane@example.com', null);
     expect(userRepository.findByUsername).not.toHaveBeenCalled();
   });
 
   it('resolves a non-email identifier via findByUsername', async () => {
     const { useCase, userRepository } = createAll();
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(userRepository.findByUsername).toHaveBeenCalledWith('jane');
+    expect(userRepository.findByUsername).toHaveBeenCalledWith('jane', null);
     expect(userRepository.findByEmail).not.toHaveBeenCalled();
   });
 

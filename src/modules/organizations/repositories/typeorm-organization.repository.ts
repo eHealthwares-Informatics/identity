@@ -20,10 +20,16 @@ export class TypeormOrganizationRepository implements OrganizationRepository {
     offset,
     limit,
     search,
+    organizationId,
   }: OrganizationListOptions): Promise<{ items: Organization[]; total: number }> {
     const qb = this.organizationRepository
       .createQueryBuilder('organization')
       .where('organization.deleted_at IS NULL');
+
+    const org = organizationId?.trim();
+    if (org) {
+      qb.andWhere('organization.id = :organizationId', { organizationId: org });
+    }
 
     if (search) {
       qb.andWhere('(organization.name ILIKE :search OR organization.code ILIKE :search)', {

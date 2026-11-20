@@ -145,7 +145,9 @@ export class UsersController {
   @Roles('admin', 'super_admin')
   @ApiOperation({ summary: 'Get user by ID' })
   async getById(@Param('id') id: string, @CurrentUser() currentUser: RequestUser): Promise<UserResponseDto> {
-    const user = await this.userRepository.findById(id);
+    // Scope by the caller's organisation; a super admin (blank org) may read
+    // any user.
+    const user = await this.userRepository.findById(id, currentUser.organizationId ?? null);
     if (!user) {
       this.logger.warn(`User not found: id=${id} requested by actor=${currentUser.sub}`);
       throw new NotFoundException('User not found');
