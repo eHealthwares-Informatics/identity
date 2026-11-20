@@ -4,6 +4,7 @@ import { AssignRoleDto } from '../dto/assign-role.dto';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { EnsureCustomerUserDto } from '../dto/ensure-customer-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
+import { UpdateMyProfileDto } from '../dto/update-my-profile.dto';
 import { UserResponseDto } from '../dto/user-response.dto';
 import { AssignRoleUseCase } from '../services/assign-role.use-case';
 import { CreateUserUseCase } from '../services/create-user.use-case';
@@ -150,6 +151,47 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
     return this.toResponse(user);
+  }
+
+  /**
+   * Self-service profile update for the signed-in user. No `@Roles` decorator:
+   * the controller-level `JwtAuthGuard` authenticates and `RolesGuard` allows
+   * the call because it only enforces when roles are declared. The payload is
+   * narrowed to basic details inside `UpdateMyProfileDto`, so a user can never
+   * escalate their own roles/active flag/password here.
+   *
+   * Declared before `@Put(':id')`/`@Patch(':id')` so `/users/me` is not captured
+   * by the `:id` handlers.
+   */
+  @Patch('me')
+  @ApiOperation({ summary: 'Update the current user basic profile' })
+  async updateMe(
+    @Body() payload: UpdateMyProfileDto,
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<UserResponseDto> {
+    const update = new UpdateUserDto();
+    update.firstName = payload.firstName;
+    update.lastName = payload.lastName;
+    update.dateOfBirth = payload.dateOfBirth;
+    update.gender = payload.gender;
+    update.phone = payload.phone;
+    update.email = payload.email;
+
+    this.logger.log(`Self profile update attempt: user=${currentUser.sub}`);
+    try {
+      const user = await this.updateUserUseCase.execute(
+        currentUser.sub,
+        update,
+        currentUser.organizationId,
+      );
+      this.logger.log(`Self profile updated: id=${user.id}`);
+      return this.toResponse(user);
+    } catch (error) {
+      this.logger.warn(
+        `Self profile update failed: user=${currentUser.sub} reason=${String((error as Error)?.message)}`,
+      );
+      throw error;
+    }
   }
 
   @Put(':id')
