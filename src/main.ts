@@ -26,6 +26,13 @@ async function bootstrap() {
     bufferLogs: true,
   });
 
+  // Do not emit ETags for API responses. Identity serves auth/profile data that
+  // the SPA refetches with axios, and axios treats `304 Not Modified` as an
+  // error (default validateStatus rejects non-2xx). Conditional requests meant
+  // `/auth/me` could 304 with no body, leaving the frontend with empty
+  // permissions/modules (endless module-switcher spinner).
+  app.getHttpAdapter().getInstance().set('etag', false);
+
   const requestLogger = new HttpRequestLoggerMiddleware(logLevel);
   app.use((req, res, next) => requestLogger.use(req, res, next));
 
