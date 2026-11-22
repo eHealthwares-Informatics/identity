@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProvisionController } from './controllers/provision.controller';
 import { ProvisionService } from './services/provision.service';
+import { ProvisioningJobService } from './services/provisioning-job.service';
+import { ProvisioningJobOrmEntity } from './entities/provisioning-job.orm-entity';
 import { ScryptPasswordHasherService } from '../auth/services/scrypt-password-hasher.service';
 import { PASSWORD_HASHER } from '../auth/services/identity.di-tokens';
 import { OrganizationOrmEntity } from '../organizations/entities/organization.orm-entity';
@@ -11,10 +13,9 @@ import { PermissionOrmEntity } from '../roles/entities/permission.orm-entity';
 import { UserOrmEntity } from '../users/entities/user.orm-entity';
 
 // Runtime onboarding: provisions a complete, isolated tenant (identity +
-// rxsoft backend + emr reference data) in one call. The backend and emr
-// databases are opened as named TypeORM connections in app.module.ts
-// (BACKEND_DB_* / EMR_DB_* envs); this module only needs the repositories for
-// the identity side plus the named DataSources.
+// rxsoft backend + emr reference data). Registered synchronously through
+// ProvisionService; `ProvisioningJobService` runs the same staged provisioner
+// as a durable background job (202 + poll) for production onboarding.
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -23,13 +24,15 @@ import { UserOrmEntity } from '../users/entities/user.orm-entity';
       RoleOrmEntity,
       PermissionOrmEntity,
       UserOrmEntity,
+      ProvisioningJobOrmEntity,
     ]),
   ],
   controllers: [ProvisionController],
   providers: [
     ProvisionService,
+    ProvisioningJobService,
     { provide: PASSWORD_HASHER, useClass: ScryptPasswordHasherService },
   ],
-  exports: [ProvisionService],
+  exports: [ProvisionService, ProvisioningJobService],
 })
 export class ProvisionModule {}

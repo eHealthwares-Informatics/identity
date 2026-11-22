@@ -121,9 +121,10 @@ export class AuthController {
 
   @Public()
   @Post('onboard-organization')
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Onboard a new organisation (creates org, roles, users + reference data)',
+    summary:
+      'Queue organisation onboarding (202; poll /provision/status/:code for progress)',
   })
   onboardOrganization(@Body() payload: OnboardOrganisationDto) {
     return this.onboardOrganisationService.execute(payload);
@@ -312,6 +313,14 @@ export class AuthController {
       );
       throw error;
     }
+  }
+
+  @Get('provisioning')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get the current organisation's provisioning job state" })
+  provisioning(@CurrentUser() currentUser: RequestUser) {
+    return this.onboardOrganisationService.statusForOrganization(currentUser.organizationId);
   }
 
   @Get('me')

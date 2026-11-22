@@ -1,31 +1,28 @@
-import { Inject } from '@nestjs/common';
-import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { OrganizationOrmEntity } from '../../organizations/entities/organization.orm-entity';
 import { OnboardOrganisationDto } from '../dto/onboard-organisation.dto';
-import { USER_REPOSITORY } from './identity.di-tokens';
-import type { UserRepository } from '../../users/repositories/user.repository';
-import { ProvisionService } from '../../provision/services/provision.service';
+import { ProvisioningJobService } from '../../provision/services/provisioning-job.service';
 
 // Public self-serve onboarding facade ("Onboard your Organisation" on the
-// login page). Creates a brand-new organisation by delegating to the native
-// provisioner, which builds the full tenant (roles, users, permissions,
-// item whitelist, price list, stock, parties, POS configs) in the identity,
-// rxsoft backend and emr databases. Unlike the raw POST /provision endpoint,
-// onboarding refuses to reuse an existing org code (409) instead of being
-// idempotent, so sign-up never silently merges into another tenant.
+// login page). Creates a brand-new organisation by queueing identity's native
+// provisioner, which builds the full tenant (roles, users, permissions, item
+// whitelist, price list, stock, parties, POS configs, EMR clinical data) in the
+// identity, rxsoft backend and emr databases.
+//
+// The request returns 202 immediately; the client polls
+// GET /provision/status/:code while the background worker runs. The job state
+// is durable, so a restart resumes from the last completed stage/batch instead
+// of stranding a half-provisioned tenant.
 @Injectable()
 export class OnboardOrganisationService {
   private readonly logger = new Logger(OnboardOrganisationService.name);
 
   constructor(
-    @InjectRepository(OrganizationOrmEntity)
-    private readonly organizationRepository: Repository<OrganizationOrmEntity>,
-    @Inject(USER_REPOSITORY)
-    private readonly userRepository: UserRepository,
-    private readonly provisionService: ProvisionService,
+    private readonly provisioningJobs: ProvisioningJobService,
     private readonly config: ConfigService,
   ) {}
 
@@ -35,27 +32,14 @@ export class OnboardOrganisationService {
       throw new ServiceUnavailableException('Organisation onboarding is not enabled');
     }
 
-    const code = payload.code.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-    const existing = await this.organizationRepository.findOne({ where: { code } });
-    if (existing) {
-      throw new ConflictException(`An organisation with code "${code}" already exists`);
-    }
+    this.logger.log(
+      `Queueing onboarding for ${payload.code.toUpperCase()} (owner ${payload.ownerEmail})`,
+    );
+    return this.provisioningJobs.createOrGet(payload);
+  }
 
-    const ownerEmail = payload.ownerEmail.trim().toLowerCase();
-    const emailOwner = await this.userRepository.findByEmail(ownerEmail);
-    if (emailOwner) {
-      throw new ConflictException(
-        `Account with email "${ownerEmail}" already exists. Please sign in with that email.`,
-      );
-    }
-
-    this.logger.log(`Onboarding organisation ${code} (owner ${ownerEmail})`);
-    return this.provisionService.provision({
-      code,
-      name: payload.name,
-      password: payload.password,
-      ownerEmail,
-      ownerUsername: payload.ownerUsername,
-    });
+  /** Current provisioning state for an organisation (sidebar marker). */
+  statusForOrganization(organizationId: string | null | undefined) {
+    return this.provisioningJobs.statusForOrganization(organizationId);
   }
 }
