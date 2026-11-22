@@ -61,8 +61,8 @@ const tenant = tenantFromUser(currentUser);
 | `permissions` | `GET /permissions/modules` | Available permissions grouped by module |
 | `organizations` | CRUD `/organizations` | Tenant organizations |
 | `locations` | CRUD `/locations` | General-purpose locations scoped to org |
-| `provision` | `POST /provision`, `GET /provision/health`, `GET /provision/status/:code`, `DELETE /provision/:code` | Native tenant provisioning/teardown (identity + rxsoft + EMR). Public, gated by `ONBOARD_ORGANISATIONS_ENABLED` |
-| `auth` onboarding | `POST /auth/onboard-organization` (`@Public()`) | Self-serve organisation signup used by the login page; refuses an existing code/email (409) |
+| `provision` | `POST /provision` (202), `GET /provision/health`, `GET /provision/status/:code`, `POST /provision/:code/resume`, `DELETE /provision/:code` | Native tenant provisioning/teardown (identity + rxsoft + EMR). Async durable job (`provisioning_jobs`) + in-process worker. Public, gated by `ONBOARD_ORGANISATIONS_ENABLED` |
+| `auth` onboarding | `POST /auth/onboard-organization` (`@Public()`, 202) | Queues self-serve organisation signup; client polls `/provision/status/:code` |
 
 ### Provisioning
 

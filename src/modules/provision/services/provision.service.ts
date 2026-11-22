@@ -26,6 +26,16 @@ import {
   RETAIL_PRICE_LIST_CODE,
 } from '../org-template';
 import { ProvisionOrganisationDto } from '../dto/provision-organisation.dto';
+import type {
+  LocationRef,
+  PriceListRef,
+  ProvisionContext,
+  StageProgress,
+} from '../provision-context';
+import {
+  PROVISION_STAGE_NAMES,
+  type ProvisionStageName,
+} from '../provision-job.types';
 import {
   DeprovisionOutcome,
   ProvisionResult,
@@ -78,57 +88,155 @@ export class ProvisionService {
     private readonly config: ConfigService,
   ) {}
 
+  // ── Staged provisioning ────────────────────────────────────────────────
+  // `provision()` remains a synchronous convenience (tests/scripts). Runtime
+  // onboarding runs the same stages through ProvisioningJobService; each stage
+  // is idempotent and the catalogue stages checkpoint a cursor after every
+  // batch, so a restart resumes instead of stranding a half-built tenant.
+
+  async runProvisionStage(
+    stage: ProvisionStageName,
+    ctx: ProvisionContext,
+    cursor: string | null,
+    onProgress: StageProgress,
+  ): Promise<void> {
+    switch (stage) {
+      case 'identity':
+        return this.stageIdentity(ctx);
+      case 'emr':
+        return this.stageEmr(ctx);
+      case 'identity-access':
+        return this.stageIdentityAccess(ctx);
+      case 'backend-items':
+        return this.stageBackendItems(ctx, cursor, onProgress);
+      case 'backend-config':
+        return this.stageBackendConfig(ctx);
+      case 'backend-pricelist':
+        return this.stageBackendPriceList(ctx, cursor, onProgress);
+      case 'backend-stock-locations':
+        return this.stageBackendStockLocations(ctx);
+      case 'backend-lots':
+        return this.stageBackendLots(ctx, cursor, onProgress);
+      case 'backend-balances':
+        return this.stageBackendBalances(ctx, cursor, onProgress);
+      case 'backend-parties':
+        return this.stageBackendParties(ctx);
+      case 'backend-pos':
+        return this.stageBackendPos(ctx);
+      default: {
+        const exhaustive: never = stage;
+        throw new Error(`Unknown provisioning stage: ${String(exhaustive)}`);
+      }
+    }
+  }
+
   async provision(dto: ProvisionOrganisationDto): Promise<ProvisionResult> {
+    const ctx = await this.buildSyncContext(dto);
+    for (const stage of PROVISION_STAGE_NAMES) {
+      await this.runProvisionStage(stage, ctx, null, () => undefined);
+    }
+    return this.buildResult(ctx);
+  }
+
+  private async buildSyncContext(dto: ProvisionOrganisationDto): Promise<ProvisionContext> {
     const orgCode = dto.code.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
     const orgName = dto.name.trim();
-    const password = dto.password ?? 'password';
     if (!orgCode || !orgName) {
       throw new BadRequestException('code and name are required');
     }
+    const password = dto.password ?? 'password';
+    return {
+      orgId: randomUUID(),
+      orgCode,
+      orgName,
+      storeCode: (dto.storeCode ?? LOCATION_STORE_SUFFIX).toUpperCase(),
+      ownerEmail: dto.ownerEmail?.trim().toLowerCase() ?? null,
+      ownerUsername: dto.ownerUsername ?? null,
+      useSubset: Boolean(dto.items?.length) && dto.whitelistItems !== 'all',
+      items: dto.items ?? null,
+      passwordHash: await this.passwordHasher.hash(password),
+      plainPassword: password,
+      created: false,
+    };
+  }
 
-    // ── identity: organizations ─────────────────────────────────────────
-    const org = await this.organizationRepository.findOne({
-      where: { code: orgCode },
+  private provisionBatchSize(): number {
+    const raw = Number(this.config.get<string>('PROVISION_BATCH_SIZE', '1000'));
+    return Number.isFinite(raw) && raw >= 100 ? Math.min(Math.floor(raw), 5000) : 1000;
+  }
+
+  // ── identity ───────────────────────────────────────────────────────────
+  private async stageIdentity(ctx: ProvisionContext): Promise<void> {
+    const existing = await this.organizationRepository.findOne({
+      where: { code: ctx.orgCode },
       withDeleted: true,
     });
-    const created = !org;
-    const orgId = org?.id ?? randomUUID();
+    if (existing) {
+      ctx.orgId = existing.id;
+    } else {
+      ctx.created = true;
+    }
     await this.organizationRepository.save({
-      id: orgId,
-      code: orgCode,
-      name: orgName,
+      id: ctx.orgId,
+      code: ctx.orgCode,
+      name: ctx.orgName,
       isActive: true,
+      domain: existing?.domain ?? null,
       deletedAt: null,
     });
-    this.logger.log(`Provisioning organisation ${orgCode} [${orgId}]`);
+    await this.ensureLocations(ctx, true);
+    this.logger.log(`[${ctx.orgCode}] identity: organisation + locations ready`);
+  }
 
-    // ── identity: locations (HQ + store) ────────────────────────────────
-    const storeCode = (dto.storeCode ?? LOCATION_STORE_SUFFIX).toUpperCase();
-    const existingLocs = await this.locationRepository.find({
-      where: { organizationId: orgId },
+  private async ensureLocations(ctx: ProvisionContext, create = false): Promise<void> {
+    if (ctx.hq && ctx.store) {
+      return;
+    }
+    const locations = await this.locationRepository.find({
+      where: { organizationId: ctx.orgId },
       withDeleted: true,
     });
-    const byLocCode = new Map(existingLocs.map((l) => [l.code, l]));
-    const hq = byLocCode.get(LOCATION_HQ_CODE) ?? {
-      id: randomUUID(),
-      organizationId: orgId,
-      code: LOCATION_HQ_CODE,
-      name: `${orgName} ${LOCATION_HQ_NAME}`,
-      parentId: null,
-      isActive: true,
-    };
-    const store = byLocCode.get(storeCode) ?? {
-      id: randomUUID(),
-      organizationId: orgId,
-      code: storeCode,
-      name: `${orgName} Store`,
-      parentId: null,
-      isActive: true,
-    };
-    store.parentId = store.parentId ?? hq.id;
-    await this.locationRepository.save([hq, store]);
+    const byCode = new Map(locations.map((location) => [location.code, location]));
+    let hq = byCode.get(LOCATION_HQ_CODE);
+    let store = byCode.get(ctx.storeCode);
+    if (create) {
+      hq =
+        hq ??
+        ({
+          id: randomUUID(),
+          organizationId: ctx.orgId,
+          code: LOCATION_HQ_CODE,
+          name: `${ctx.orgName} ${LOCATION_HQ_NAME}`,
+          parentId: null,
+          isActive: true,
+        } as LocationOrmEntity);
+      store =
+        store ??
+        ({
+          id: randomUUID(),
+          organizationId: ctx.orgId,
+          code: ctx.storeCode,
+          name: `${ctx.orgName} Store`,
+          parentId: null,
+          isActive: true,
+        } as LocationOrmEntity);
+      store.parentId = store.parentId ?? hq.id;
+      await this.locationRepository.save([hq, store]);
+    }
+    if (!hq || !store) {
+      throw new Error(`Locations missing for ${ctx.orgCode}`);
+    }
+    ctx.hq = { id: hq.id, code: hq.code, name: hq.name };
+    ctx.store = { id: store.id, code: store.code, name: store.name };
+  }
 
-    // ── emr: default departments at the HQ site ─────────────────────────
+  // ── emr ────────────────────────────────────────────────────────────────
+  private async stageEmr(ctx: ProvisionContext): Promise<void> {
+    await this.ensureLocations(ctx);
+    const hq = ctx.hq!;
+    const orgId = ctx.orgId;
+    const orgCode = ctx.orgCode;
+
     const deptTarget = new RawUpsertTarget(this.emrDb, 'departments', ['id'], orgId);
     const existingDepts = await deptTarget.findAll();
     const deptByCode = new Map(existingDepts.map((d) => [d.code, d]));
@@ -143,13 +251,9 @@ export class ProvisionService {
       is_active: true,
     }));
     await deptTarget.save(departmentRows);
-    // Refresh the lookup with the rows just written. Building it from the
-    // pre-insert read made the ward loop below find no department on a fresh
-    // organisation (wards/beds silently stayed at zero).
     for (const row of departmentRows) deptByCode.set(String(row.code), row);
-    this.logger.log(`Provisioning ${departmentRows.length} EMR departments for ${orgCode}`);
+    this.logger.log(`[${orgCode}] emr: ${departmentRows.length} departments`);
 
-    // ── emr: wards (two per inpatient department) + beds ──────────────
     const wardTarget = new RawUpsertTarget(this.emrDb, 'wards', ['id'], orgId);
     const existingWards = await wardTarget.findAll();
     const wardByCode = new Map(existingWards.map((w) => [w.code as string, w]));
@@ -194,14 +298,8 @@ export class ProvisionService {
       }),
     );
     await bedTarget.save(bedRows);
-    this.logger.log(
-      `Provisioning ${wardRows.length} wards and ${bedRows.length} beds for ${orgCode}`,
-    );
+    this.logger.log(`[${orgCode}] emr: ${wardRows.length} wards / ${bedRows.length} beds`);
 
-    // ── emr: demo patients ────────────────────────────────────────────
-    // patients.patient_id carries a GLOBAL unique index (not org-scoped),
-    // so demo MRNs must be suffixed per organisation or the second
-    // provisioning on this database fails with 23505. Suffix = orgCode.
     const mrn = (base: string) => `${base}-${orgCode}`;
     const patientTarget = new RawUpsertTarget(this.emrDb, 'patients', ['id'], orgId);
     const existingPatients = await patientTarget.findAll();
@@ -225,10 +323,6 @@ export class ProvisionService {
     await patientTarget.save(patientRows);
     const mrnByBaseMrn = new Map(DEMO_ORG_PATIENTS.map((p) => [p.patientId, mrn(p.patientId)]));
 
-    // ── emr: demo admissions/discharges (drive the ward board) ────────
-    // Each demo admission gets its own linked visit — admissions extend
-    // visits, so encounters/requests attach through visit_id. visits.
-    // visit_number is also GLOBALLY unique → suffix with orgCode.
     const visitTarget = new RawUpsertTarget(this.emrDb, 'visits', ['id'], orgId);
     const existingVisits = await visitTarget.findAll();
     const visitByNumber = new Map(existingVisits.map((v) => [v.visit_number as string, v]));
@@ -294,10 +388,18 @@ export class ProvisionService {
     });
     await admissionTarget.save(admissionRows);
     this.logger.log(
-      `Provisioning ${visitRows.length} visits, ${patientRows.length} demo patients and ${admissionRows.length} admissions for ${orgCode}`,
+      `[${orgCode}] emr: ${visitRows.length} visits / ${patientRows.length} patients / ${admissionRows.length} admissions`,
     );
+  }
 
-    // ── identity: org-scoped roles ─────────────────────────────────────
+  // ── identity: roles, grants, users ─────────────────────────────────────
+  private async stageIdentityAccess(ctx: ProvisionContext): Promise<void> {
+    await this.ensureLocations(ctx);
+    const orgId = ctx.orgId;
+    const orgCode = ctx.orgCode;
+    const hq = ctx.hq!;
+    const store = ctx.store!;
+
     const existingRoles = await this.roleRepository.find({
       where: { organizationId: orgId },
     });
@@ -316,7 +418,6 @@ export class ProvisionService {
     });
     await this.roleRepository.save(roleRows);
 
-    // ── identity: role_permissions (junction, composite PK) ─────────────
     const permissions = await this.permissionRepository.find();
     const permIdByCode = new Map(permissions.map((p) => [p.code, p.id]));
     const rpRows: Array<[string, string]> = [];
@@ -343,12 +444,11 @@ export class ProvisionService {
       );
     }
 
-    // ── identity: users ─────────────────────────────────────────────────
     const allUsers = await this.userRepository.find({ withDeleted: true });
     const usersByOrgUsername = new Map(
       allUsers.map((u) => [`${u.organizationId}|${u.username}`, u]),
     );
-    const ownerEmail = dto.ownerEmail?.trim().toLowerCase();
+    const ownerEmail = ctx.ownerEmail;
     if (ownerEmail) {
       const emailOwner = allUsers.find(
         (u) => String(u.email ?? '').toLowerCase() === ownerEmail && u.deletedAt == null,
@@ -357,13 +457,12 @@ export class ProvisionService {
         throw new ConflictException(`Account with email "${ownerEmail}" already exists`);
       }
     }
-    const passwordHash = await this.passwordHasher.hash(password);
     const userRows: UserOrmEntity[] = [];
     const usernameBySuffix = new Map<string, string>();
     for (const tpl of ORG_TEMPLATE_USERS) {
       const isOwner = tpl.suffix === 'OWNER';
       const username = isOwner
-        ? ownerEmail ?? dto.ownerUsername ?? `${orgCode}_${tpl.suffix}`
+        ? ownerEmail ?? ctx.ownerUsername ?? `${orgCode}_${tpl.suffix}`
         : `${orgCode}_${tpl.suffix}`;
       const sameOrgOwner =
         isOwner && ownerEmail
@@ -374,14 +473,13 @@ export class ProvisionService {
                 u.deletedAt == null,
             )
           : undefined;
-      const existing =
-        sameOrgOwner ?? usersByOrgUsername.get(`${orgId}|${username}`);
-      const loc = tpl.locationCode === storeCode ? store : hq;
+      const existing = sameOrgOwner ?? usersByOrgUsername.get(`${orgId}|${username}`);
+      const loc = tpl.locationCode === ctx.storeCode ? store : hq;
       userRows.push({
         id: existing?.id ?? randomUUID(),
         organizationId: orgId,
         username,
-        passwordHash,
+        passwordHash: ctx.passwordHash,
         isActive: true,
         locationId: loc.id,
         email: isOwner ? ownerEmail ?? null : null,
@@ -392,7 +490,6 @@ export class ProvisionService {
     await this.userRepository.save(userRows);
     const userIdByName = new Map(userRows.map((u) => [u.username, u.id]));
 
-    // ── identity: user_roles (junction, composite PK) ───────────────────
     const urRows: Array<[string, string]> = [];
     for (const tpl of ORG_TEMPLATE_USERS) {
       const userId = userIdByName.get(usernameBySuffix.get(tpl.suffix)!);
@@ -412,7 +509,8 @@ export class ProvisionService {
       );
     }
 
-    const provisionedUsers: ProvisionedUser[] = userRows.map((u) => {
+    ctx.userRows = userRows;
+    ctx.provisionedUsers = userRows.map((u) => {
       const suffix = [...usernameBySuffix.entries()].find(
         ([, name]) => name === u.username,
       )?.[0];
@@ -421,78 +519,128 @@ export class ProvisionService {
         : [];
       return {
         username: u.username,
-        password,
+        password: ctx.plainPassword ?? '',
         roles,
         organizationId: orgId,
         locationId: u.locationId,
         email: u.email ?? null,
       };
     });
+    this.logger.log(`[${orgCode}] identity: ${roleRows.length} roles / ${userRows.length} users`);
+  }
 
-    // ── backend: whitelist global items into organisation_items ─────────
-    const itemTarget = new RawUpsertTarget(this.backendDb, 'items');
-    const items = await itemTarget.findAll();
-    // Global items no longer carry an is_active column — activity is decided
-    // per organisation via organisation_items.is_active (whitelist/blacklist).
-
-    // Item codes are global (items own them via the items.code column now).
-    // Fall back to the DEFAULT org's legacy organisation_items code, then to an
-    // uppercase name slug, for pre-existing rows that have no code yet.
-    const defaultOrgItems = await new RawUpsertTarget(
-      this.backendDb,
-      'organisation_items',
-      ['organization_id', 'item_id'],
-      DEFAULT_ORGANIZATION_ID,
-    ).findAll();
-    const defaultOrgCodeByItem = new Map(defaultOrgItems.map((o) => [o.item_id, o]));
-    const orgCodeForItem = (item: Record<string, any>): string => {
-      if (item.code) return String(item.code);
-      const ov = defaultOrgCodeByItem.get(item.id);
-      if (ov?.code) return String(ov.code);
-      return String(item.name)
-        .toUpperCase()
-        .replace(/[^A-Z0-9_-]/g, '_')
-        .slice(0, 60);
-    };
-
-    const selectedItems =
-      dto.whitelistItems === 'all' || !dto.items?.length
-        ? items
-        : items.filter((i) => dto.items!.includes(orgCodeForItem(i)));
-
+  // ── backend: catalogue whitelist (chunked) ─────────────────────────────
+  private async stageBackendItems(
+    ctx: ProvisionContext,
+    cursor: string | null,
+    onProgress: StageProgress,
+  ): Promise<void> {
+    const batch = this.provisionBatchSize();
     const orgItemTarget = new RawUpsertTarget(
       this.backendDb,
       'organisation_items',
       ['organization_id', 'item_id'],
-      orgId,
+      ctx.orgId,
     );
-    const existingOrgItems = await orgItemTarget.findAll();
-    const existingOrgItemByItem = new Map(existingOrgItems.map((o) => [o.item_id, o]));
-    const resolvedCodeByItemId = new Map<string, string>();
-    const orgItemRows: Record<string, any>[] = [];
-    for (const item of selectedItems) {
-      const code = orgCodeForItem(item);
-      orgItemRows.push({
-        id: existingOrgItemByItem.get(item.id)?.id ?? randomUUID(),
-        organization_id: orgId,
-        item_id: item.id,
-        code: null,
-        is_active: true,
-        alias: null,
-      });
-      resolvedCodeByItemId.set(item.id, code);
-    }
-    await orgItemTarget.save(orgItemRows);
+    const selected = ctx.useSubset && ctx.items?.length ? new Set(ctx.items) : null;
+    let last = cursor;
 
-    // ── backend: whitelist global payment providers into
-    // ── organisation_payment_providers (items-style per-org enablement) ──
+    for (;;) {
+      const items = await this.pageItems(last, batch);
+      if (!items.length) {
+        await onProgress(null, 0);
+        return;
+      }
+      const ids = items.map((item) => item.id);
+      const overrides: Array<{ item_id: string; code: string | null }> =
+        await this.backendDb.query(
+          `SELECT item_id, code FROM organisation_items
+           WHERE organization_id = $1 AND item_id = ANY($2::uuid[])`,
+          [DEFAULT_ORGANIZATION_ID, ids],
+        );
+      const overrideByItem = new Map(overrides.map((row) => [row.item_id, row.code]));
+
+      const rows: Record<string, any>[] = [];
+      for (const item of items) {
+        const code = this.resolveItemCode(item, overrideByItem.get(item.id));
+        if (selected && !selected.has(code)) continue;
+        rows.push({
+          id: randomUUID(),
+          organization_id: ctx.orgId,
+          item_id: item.id,
+          // Persist the resolved code (the old provisioner kept it in memory).
+          // Later stages and resumes read it back without re-resolving.
+          code,
+          is_active: true,
+          alias: null,
+        });
+      }
+      if (rows.length) {
+        await orgItemTarget.save(rows);
+      }
+      last = items[items.length - 1].id;
+      await onProgress(last, rows.length);
+    }
+  }
+
+  private resolveItemCode(
+    item: { code?: string | null; name?: string | null },
+    overrideCode?: string | null,
+  ): string {
+    if (item.code) return String(item.code);
+    if (overrideCode) return String(overrideCode);
+    return String(item.name ?? '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9_-]/g, '_')
+      .slice(0, 60);
+  }
+
+  private async pageItems(
+    lastId: string | null,
+    limit: number,
+  ): Promise<Array<{ id: string; code: string | null; name: string | null }>> {
+    return lastId
+      ? this.backendDb.query(
+          `SELECT id, code, name FROM items WHERE id > $1::uuid ORDER BY id LIMIT $2`,
+          [lastId, limit],
+        )
+      : this.backendDb.query(
+          `SELECT id, code, name FROM items ORDER BY id LIMIT $1`,
+          [limit],
+        );
+  }
+
+  private async pageOrgItems(
+    orgId: string,
+    lastItemId: string | null,
+    limit: number,
+  ): Promise<Array<{ item_id: string; code: string | null }>> {
+    return this.backendDb.query(
+      `SELECT oi.item_id,
+              COALESCE(
+                NULLIF(oi.code, ''),
+                NULLIF(i.code, ''),
+                LEFT(UPPER(REGEXP_REPLACE(i.name, '[^A-Za-z0-9_-]', '_', 'g')), 60)
+              ) AS code
+       FROM organisation_items oi
+       LEFT JOIN items i ON i.id = oi.item_id
+       WHERE oi.organization_id = $1
+         AND ($2::uuid IS NULL OR oi.item_id > $2::uuid)
+       ORDER BY oi.item_id
+       LIMIT $3`,
+      [orgId, lastItemId, limit],
+    );
+  }
+
+  // ── backend: configuration ─────────────────────────────────────────────
+  private async stageBackendConfig(ctx: ProvisionContext): Promise<void> {
     const providerTarget = new RawUpsertTarget(this.backendDb, 'payment_providers');
     const providers = await providerTarget.findAll();
     const orgProviderTarget = new RawUpsertTarget(
       this.backendDb,
       'organisation_payment_providers',
       ['organization_id', 'payment_provider_id'],
-      orgId,
+      ctx.orgId,
     );
     const existingOrgProviders = await orgProviderTarget.findAll();
     const existingOrgProviderByProvider = new Map(
@@ -500,77 +648,102 @@ export class ProvisionService {
     );
     const orgProviderRows = providers.map((provider) => ({
       id: existingOrgProviderByProvider.get(provider.id)?.id ?? randomUUID(),
-      organization_id: orgId,
+      organization_id: ctx.orgId,
       payment_provider_id: provider.id,
       is_active: true,
       is_default: provider.channel === 'cash',
     }));
-    if (orgProviderRows.length) await orgProviderTarget.save(orgProviderRows);
+    if (orgProviderRows.length) {
+      await orgProviderTarget.save(orgProviderRows);
+    }
 
-    // ── backend: organisation_configs (org defaults) ────────────────────
     const orgConfigTarget = new RawUpsertTarget(
       this.backendDb,
       'organisation_configs',
       ['organization_id'],
-      orgId,
+      ctx.orgId,
     );
     const existingOrgConfigs = await orgConfigTarget.findAll();
     await orgConfigTarget.save([
       {
         id: existingOrgConfigs[0]?.id ?? randomUUID(),
-        organization_id: orgId,
+        organization_id: ctx.orgId,
         pos_header: null,
         default_login_timeout_minutes: 480,
         default_allow_pos: true,
         default_allow_a4_print: false,
       },
     ]);
+  }
 
-    // ── backend: retail price list + items ──────────────────────────────
-    const plTarget = new RawUpsertTarget(
+  // ── backend: price list (chunked) ──────────────────────────────────────
+  private async ensurePriceList(ctx: ProvisionContext): Promise<PriceListRef> {
+    if (ctx.priceList) return ctx.priceList;
+    const target = new RawUpsertTarget(
       this.backendDb,
       'price_lists',
       ['organization_id', 'code'],
-      orgId,
+      ctx.orgId,
     );
-    const existingPls = await plTarget.findAll();
-    const pl = existingPls.find((p) => p.code === RETAIL_PRICE_LIST_CODE) ?? {
-      id: randomUUID(),
-    };
-    await plTarget.save([
+    const existing = await target.findAll();
+    const pl = existing.find((p) => p.code === RETAIL_PRICE_LIST_CODE) ?? { id: randomUUID() };
+    await target.save([
       {
         id: pl.id,
-        organization_id: orgId,
+        organization_id: ctx.orgId,
         code: RETAIL_PRICE_LIST_CODE,
         name: 'Retail Price List',
         is_default: true,
         is_active: true,
       },
     ]);
+    ctx.priceList = {
+      id: pl.id as string,
+      code: RETAIL_PRICE_LIST_CODE,
+      name: 'Retail Price List',
+    };
+    return ctx.priceList;
+  }
 
-    const pliTarget = new RawUpsertTarget(this.backendDb, 'price_list_items', [
-      'price_list_id',
-      'item_id',
-    ]);
-    const existingPlis = await pliTarget.findAll();
-    const pliSeen = new Set(existingPlis.map((r) => `${r.price_list_id}|${r.item_id}`));
-    const pliRows: Record<string, any>[] = [];
-    for (const orgItem of orgItemRows) {
-      const key = `${pl.id}|${orgItem.item_id}`;
-      if (pliSeen.has(key)) continue;
-      pliSeen.add(key);
-      const code = resolvedCodeByItemId.get(orgItem.item_id) ?? '';
-      pliRows.push({
+  private async stageBackendPriceList(
+    ctx: ProvisionContext,
+    cursor: string | null,
+    onProgress: StageProgress,
+  ): Promise<void> {
+    const pl = await this.ensurePriceList(ctx);
+    const batch = this.provisionBatchSize();
+    let last = cursor;
+
+    for (;;) {
+      const rows = await this.pageOrgItems(ctx.orgId, last, batch);
+      if (!rows.length) {
+        await onProgress(null, 0);
+        return;
+      }
+      const pliRows = rows.map((row) => ({
         id: randomUUID(),
         price_list_id: pl.id,
-        item_id: orgItem.item_id,
+        item_id: row.item_id,
         currency_code: 'NGN',
-        unit_price: this.retailFor(code),
-      });
+        unit_price: this.retailFor(row.code ?? ''),
+      }));
+      await this.insertIgnore(
+        'price_list_items',
+        ['id', 'price_list_id', 'item_id', 'currency_code', 'unit_price'],
+        pliRows,
+        ['price_list_id', 'item_id'],
+      );
+      last = rows[rows.length - 1].item_id;
+      await onProgress(last, pliRows.length);
     }
-    await pliTarget.save(pliRows);
+  }
 
-    // ── backend: warehouse + stock locations + store mappings ───────────
+  // ── backend: warehouse + stock locations ───────────────────────────────
+  private async stageBackendStockLocations(ctx: ProvisionContext): Promise<void> {
+    await this.ensureLocations(ctx);
+    const store = ctx.store!;
+    const orgId = ctx.orgId;
+
     const whTarget = new RawUpsertTarget(this.backendDb, 'warehouses', ['id'], orgId);
     const existingWhs = await whTarget.findAll();
     const wh = existingWhs.find((w) => w.code === 'MAIN_WH') ?? { id: randomUUID() };
@@ -580,10 +753,11 @@ export class ProvisionService {
         organization_id: orgId,
         store_id: 'default',
         code: 'MAIN_WH',
-        name: `${orgName} Main Warehouse`,
+        name: `${ctx.orgName} Main Warehouse`,
         is_active: true,
       },
     ]);
+    ctx.warehouse = { id: wh.id as string, code: 'MAIN_WH', name: `${ctx.orgName} Main Warehouse` };
 
     const slTarget = new RawUpsertTarget(this.backendDb, 'stock_locations', ['id'], orgId);
     const existingSls = await slTarget.findAll();
@@ -599,13 +773,17 @@ export class ProvisionService {
         location_type: type,
         is_active: true,
       };
-    const saleLoc = makeLoc('SALE_STOCK', `${orgName} Sale Stock`, 'inventory');
-    const mainLoc = makeLoc('MAIN_STOCK', `${orgName} Main Stock`, 'internal');
-    const returnLoc = makeLoc('RETURN_STOCK', `${orgName} Return Stock`, 'internal');
+    const saleLoc = makeLoc('SALE_STOCK', `${ctx.orgName} Sale Stock`, 'inventory');
+    const mainLoc = makeLoc('MAIN_STOCK', `${ctx.orgName} Main Stock`, 'internal');
+    const returnLoc = makeLoc('RETURN_STOCK', `${ctx.orgName} Return Stock`, 'internal');
     const stockLocations = [saleLoc, mainLoc, returnLoc];
-    // Backfill the identity-site id on pre-existing rows too.
-    for (const loc of stockLocations) loc.location_id = loc.location_id ?? store.id;
+    for (const loc of stockLocations) {
+      loc.location_id = loc.location_id ?? store.id;
+    }
     await slTarget.save(stockLocations);
+    ctx.saleLoc = { id: saleLoc.id, code: saleLoc.code, name: saleLoc.name };
+    ctx.mainLoc = { id: mainLoc.id, code: mainLoc.code, name: mainLoc.name };
+    ctx.returnLoc = { id: returnLoc.id, code: returnLoc.code, name: returnLoc.name };
 
     const sslTarget = new RawUpsertTarget(
       this.backendDb,
@@ -632,78 +810,173 @@ export class ProvisionService {
     ssl('default', 'sale_issue', saleLoc.id);
     ssl('default', 'sale_return', returnLoc.id);
     await sslTarget.save(sslRows);
+  }
 
-    // ── backend: opening stock (lots + balances) per whitelisted item ───
-    const lotTarget = new RawUpsertTarget(this.backendDb, 'stock_lots', ['id'], orgId);
-    const existingLots = await lotTarget.findAll();
-    const lotByCode = new Map(existingLots.map((l) => [l.code, l]));
-    const lotRows: Record<string, any>[] = [];
-    const lotByItemId = new Map<string, any>();
-    for (const orgItem of orgItemRows) {
-      const code = `LOT-${resolvedCodeByItemId.get(orgItem.item_id) ?? 'ITEM'}`;
-      let lot = lotByCode.get(code);
-      if (!lot) {
-        lot = { id: randomUUID(), organization_id: orgId, code };
+  private async ensureSaleLoc(ctx: ProvisionContext): Promise<LocationRef> {
+    if (ctx.saleLoc) return ctx.saleLoc;
+    const locations = await new RawUpsertTarget(
+      this.backendDb,
+      'stock_locations',
+      ['id'],
+      ctx.orgId,
+    ).findAll();
+    const sale = locations.find((loc) => loc.code === 'SALE_STOCK');
+    if (!sale) {
+      throw new Error(`SALE_STOCK stock location missing for ${ctx.orgCode}`);
+    }
+    ctx.saleLoc = { id: sale.id, code: sale.code, name: sale.name };
+    return ctx.saleLoc;
+  }
+
+  // ── backend: stock lots (chunked) ──────────────────────────────────────
+  private async stageBackendLots(
+    ctx: ProvisionContext,
+    cursor: string | null,
+    onProgress: StageProgress,
+  ): Promise<void> {
+    const batch = this.provisionBatchSize();
+    let last = cursor;
+
+    for (;;) {
+      const rows = await this.pageOrgItems(ctx.orgId, last, batch);
+      if (!rows.length) {
+        await onProgress(null, 0);
+        return;
       }
-      lotRows.push(lot);
-      lotByItemId.set(orgItem.item_id, lot);
+      const pairs = rows.map((row) => ({
+        itemId: row.item_id,
+        code: `LOT-${row.code ?? 'ITEM'}`,
+      }));
+      const codes = pairs.map((pair) => pair.code);
+      const existing: Array<{ code: string }> = await this.backendDb.query(
+        `SELECT code FROM stock_lots WHERE organization_id = $1 AND code = ANY($2::text[])`,
+        [ctx.orgId, codes],
+      );
+      const existingCodes = new Set(existing.map((row) => row.code));
+      const missing = pairs
+        .filter((pair) => !existingCodes.has(pair.code))
+        .map((pair) => ({
+          id: randomUUID(),
+          organization_id: ctx.orgId,
+          code: pair.code,
+        }));
+      if (missing.length) {
+        await this.insertRows('stock_lots', ['id', 'organization_id', 'code'], missing);
+      }
+      last = rows[rows.length - 1].item_id;
+      await onProgress(last, missing.length);
     }
-    await lotTarget.save(lotRows);
+  }
 
-    const balTarget = new RawUpsertTarget(this.backendDb, 'stock_balances', ['id'], orgId);
-    const existingBals = await balTarget.findAll();
-    const balKeyFor = (itemId: string, locationId: string) => `${itemId}|${locationId}`;
-    const existingBalKeys = new Set(existingBals.map((b) => balKeyFor(b.item_id, b.location_id)));
-    const balRows: Record<string, any>[] = [];
-    for (const orgItem of orgItemRows) {
-      const itemId = orgItem.item_id;
-      const key = balKeyFor(itemId, saleLoc.id);
-      if (existingBalKeys.has(key)) continue;
-      existingBalKeys.add(key);
-      balRows.push({
-        id: randomUUID(),
-        organization_id: orgId,
-        item_id: itemId,
-        location_id: saleLoc.id,
-        lot_id: lotByItemId.get(itemId)?.id ?? null,
-        quantity_on_hand: this.openingFor(itemId),
-        quantity_reserved: 0,
-        average_cost: this.costFor(this.retailFor(resolvedCodeByItemId.get(itemId) ?? '')),
-        reorder_min_qty: 10,
-        reorder_max_qty: 200,
+  // ── backend: opening balances (chunked) ────────────────────────────────
+  private async stageBackendBalances(
+    ctx: ProvisionContext,
+    cursor: string | null,
+    onProgress: StageProgress,
+  ): Promise<void> {
+    const saleLoc = await this.ensureSaleLoc(ctx);
+    const batch = this.provisionBatchSize();
+    let last = cursor;
+
+    for (;;) {
+      const rows = await this.pageOrgItems(ctx.orgId, last, batch);
+      if (!rows.length) {
+        await onProgress(null, 0);
+        return;
+      }
+      const itemIds = rows.map((row) => row.item_id);
+      const codes = rows.map((row) => `LOT-${row.code ?? 'ITEM'}`);
+
+      const [existingBalances, lots] = await Promise.all([
+        this.backendDb.query(
+          `SELECT item_id FROM stock_balances
+           WHERE organization_id = $1 AND location_id = $2 AND item_id = ANY($3::uuid[])`,
+          [ctx.orgId, saleLoc.id, itemIds],
+        ) as Promise<Array<{ item_id: string }>>,
+        this.backendDb.query(
+          `SELECT id, code FROM stock_lots WHERE organization_id = $1 AND code = ANY($2::text[])`,
+          [ctx.orgId, codes],
+        ) as Promise<Array<{ id: string; code: string }>>,
+      ]);
+      const existingIds = new Set(existingBalances.map((row) => row.item_id));
+      const lotByCode = new Map(lots.map((lot) => [lot.code, lot.id]));
+
+      const balanceRows: Record<string, any>[] = [];
+      rows.forEach((row, index) => {
+        if (existingIds.has(row.item_id)) return;
+        const lotCode = codes[index];
+        balanceRows.push({
+          id: randomUUID(),
+          organization_id: ctx.orgId,
+          item_id: row.item_id,
+          location_id: saleLoc.id,
+          lot_id: lotByCode.get(lotCode) ?? null,
+          quantity_on_hand: this.openingFor(row.item_id),
+          quantity_reserved: 0,
+          average_cost: this.costFor(this.retailFor(row.code ?? '')),
+          reorder_min_qty: 10,
+          reorder_max_qty: 200,
+        });
       });
+      if (balanceRows.length) {
+        await this.insertRows(
+          'stock_balances',
+          [
+            'id',
+            'organization_id',
+            'item_id',
+            'location_id',
+            'lot_id',
+            'quantity_on_hand',
+            'quantity_reserved',
+            'average_cost',
+            'reorder_min_qty',
+            'reorder_max_qty',
+          ],
+          balanceRows,
+        );
+      }
+      last = rows[rows.length - 1].item_id;
+      await onProgress(last, balanceRows.length);
     }
-    await balTarget.save(balRows);
+  }
 
-    // ── backend: minimal parties (walk-in customer + suppliers) ─────────
-    const partyTarget = new RawUpsertTarget(this.backendDb, 'parties', ['id'], orgId);
+  // ── backend: parties ───────────────────────────────────────────────────
+  private async stageBackendParties(ctx: ProvisionContext): Promise<void> {
+    const partyTarget = new RawUpsertTarget(this.backendDb, 'parties', ['id'], ctx.orgId);
     const existingParties = await partyTarget.findAll();
     const partyByCode = new Map(existingParties.map((p) => [p.code, p]));
-    const partyRows: Record<string, any>[] = [];
     const partyTemplates: Array<Record<string, unknown>> = [
-      { code: `${orgCode}_WALKIN`, party_type: 'customer', name: 'Adeola Adeyemi' },
-      { code: `${orgCode}_CUST_001`, party_type: 'customer', name: 'Ngozi Okafor' },
-      { code: `${orgCode}_SUP_001`, party_type: 'supplier', name: 'Okafor Pharmaceuticals' },
-      { code: `${orgCode}_SUP_002`, party_type: 'supplier', name: 'Balogun Medical Supplies' },
+      { code: `${ctx.orgCode}_WALKIN`, party_type: 'customer', name: 'Adeola Adeyemi' },
+      { code: `${ctx.orgCode}_CUST_001`, party_type: 'customer', name: 'Ngozi Okafor' },
+      { code: `${ctx.orgCode}_SUP_001`, party_type: 'supplier', name: 'Okafor Pharmaceuticals' },
+      { code: `${ctx.orgCode}_SUP_002`, party_type: 'supplier', name: 'Balogun Medical Supplies' },
     ];
-    for (const tpl of partyTemplates) {
+    const partyRows = partyTemplates.map((tpl) => {
       const code = tpl.code as string;
-      partyRows.push({
+      return {
         id: partyByCode.get(code)?.id ?? randomUUID(),
-        organization_id: orgId,
+        organization_id: ctx.orgId,
         party_type: tpl.party_type,
         code,
         name: tpl.name as string,
         is_active: true,
-      });
-    }
+      };
+    });
     await partyTarget.save(partyRows);
+    ctx.parties = partyRows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      partyType: row.party_type as string,
+      name: row.name,
+    }));
+  }
 
-    // ── backend: minimal GL accounts (starter chart of accounts) ────────
-    // gl_accounts is strictly org-scoped (uq_gl_accounts_org_code on
-    // organization_id + account_code) and nothing seeds them globally, so a
-    // fresh org has an empty chart of accounts. Seed a starter set — the e2e
-    // artifact check and any accounting flow read it right after provisioning.
+  // ── backend: GL + POS configs ──────────────────────────────────────────
+  private async stageBackendPos(ctx: ProvisionContext): Promise<void> {
+    const saleLoc = await this.ensureSaleLoc(ctx);
+    const orgId = ctx.orgId;
+
     const glTarget = new RawUpsertTarget(this.backendDb, 'gl_accounts', ['id'], orgId);
     const existingGl = await glTarget.findAll();
     const glByCode = new Map(existingGl.map((g) => [g.account_code as string, g]));
@@ -729,12 +1002,13 @@ export class ProvisionService {
         allows_reconciliation: false,
         is_active: true,
       }));
-    if (glRows.length > 0) {
+    if (glRows.length) {
       await glTarget.save(glRows);
-      this.logger.log(`Provisioning ${glRows.length} GL accounts for ${orgCode}`);
     }
 
-    // ── backend: user_pos_configs for provisioned users ─────────────────
+    const users =
+      ctx.userRows ??
+      (await this.userRepository.find({ where: { organizationId: orgId } }));
     const upcTarget = new RawUpsertTarget(
       this.backendDb,
       'user_pos_configs',
@@ -743,53 +1017,144 @@ export class ProvisionService {
     );
     const existingUpcs = await upcTarget.findAll();
     const upcByUserId = new Map(existingUpcs.map((u) => [u.user_id, u]));
-    const upcRows: Record<string, any>[] = [];
-    for (const user of userRows) {
-      upcRows.push({
-        id: upcByUserId.get(user.id)?.id ?? randomUUID(),
-        user_id: user.id,
-        organization_id: orgId,
-        stock_location_id: saleLoc.id,
-        store_id: 'default',
-        allow_a4_print: false,
-        allow_pos: true,
-        login_timeout_minutes: null,
-        auto_select_location: true,
-        auto_select_customer: true,
-        auto_select_price_list: true,
-      });
+    const upcRows = users.map((user) => ({
+      id: upcByUserId.get(user.id)?.id ?? randomUUID(),
+      user_id: user.id,
+      organization_id: orgId,
+      stock_location_id: saleLoc.id,
+      store_id: 'default',
+      allow_a4_print: false,
+      allow_pos: true,
+      login_timeout_minutes: null,
+      auto_select_location: true,
+      auto_select_customer: true,
+      auto_select_price_list: true,
+    }));
+    if (upcRows.length) {
+      await upcTarget.save(upcRows);
     }
-    await upcTarget.save(upcRows);
+  }
 
-    const result: ProvisionResult = {
-      organizationId: orgId,
-      organizationCode: orgCode,
-      organizationName: orgName,
-      locations: {
-        hq: { id: hq.id, code: hq.code, name: hq.name },
-        store: { id: store.id, code: store.code, name: store.name },
-      },
-      priceList: { id: pl.id, code: pl.code, name: 'Retail Price List' },
-      stockLocations: {
-        sale: { id: saleLoc.id, code: saleLoc.code, name: saleLoc.name },
-        main: { id: mainLoc.id, code: mainLoc.code, name: mainLoc.name },
-        returnLocation: { id: returnLoc.id, code: returnLoc.code, name: returnLoc.name },
-      },
-      warehouses: [{ id: wh.id, code: wh.code, name: wh.name }],
-      parties: partyRows.map((p) => ({
+  // ── shared batch writers ───────────────────────────────────────────────
+  private async insertIgnore(
+    table: string,
+    columns: string[],
+    rows: Record<string, any>[],
+    conflictColumns: string[],
+  ): Promise<void> {
+    if (!rows.length) return;
+    const batchSize = 500;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const chunk = rows.slice(i, i + batchSize);
+      const placeholders = chunk
+        .map(
+          (_, r) =>
+            `(${columns.map((_, c) => `$${r * columns.length + c + 1}`).join(', ')})`,
+        )
+        .join(', ');
+      const sql = `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')})
+        VALUES ${placeholders}
+        ON CONFLICT (${conflictColumns.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
+      await this.backendDb.query(
+        sql,
+        chunk.flatMap((row) => columns.map((column) => row[column] ?? null)),
+      );
+    }
+  }
+
+  private async insertRows(
+    table: string,
+    columns: string[],
+    rows: Record<string, any>[],
+  ): Promise<void> {
+    if (!rows.length) return;
+    const batchSize = 500;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const chunk = rows.slice(i, i + batchSize);
+      const placeholders = chunk
+        .map(
+          (_, r) =>
+            `(${columns.map((_, c) => `$${r * columns.length + c + 1}`).join(', ')})`,
+        )
+        .join(', ');
+      await this.backendDb.query(
+        `INSERT INTO "${table}" (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${placeholders}`,
+        chunk.flatMap((row) => columns.map((column) => row[column] ?? null)),
+      );
+    }
+  }
+
+  private async buildResult(ctx: ProvisionContext): Promise<ProvisionResult> {
+    await this.ensureLocations(ctx);
+    const priceList = ctx.priceList ?? (await this.ensurePriceList(ctx));
+    const sale = ctx.saleLoc ?? (await this.ensureSaleLoc(ctx));
+    const stockLocations = await new RawUpsertTarget(
+      this.backendDb,
+      'stock_locations',
+      ['id'],
+      ctx.orgId,
+    ).findAll();
+    const main = ctx.mainLoc ?? stockLocations.find((s) => s.code === 'MAIN_STOCK');
+    const returnLocation = ctx.returnLoc ?? stockLocations.find((s) => s.code === 'RETURN_STOCK');
+    const warehouses = await new RawUpsertTarget(
+      this.backendDb,
+      'warehouses',
+      ['id'],
+      ctx.orgId,
+    ).findAll();
+    const warehouse = ctx.warehouse ?? warehouses.find((w) => w.code === 'MAIN_WH');
+    const partyRows = await new RawUpsertTarget(
+      this.backendDb,
+      'parties',
+      ['id'],
+      ctx.orgId,
+    ).findAll();
+    const parties =
+      ctx.parties ??
+      partyRows.map((p) => ({
         id: p.id,
         code: p.code,
         partyType: p.party_type,
         name: p.name,
-      })),
-      whitelistedItemCodes: orgItemRows.map((o) => resolvedCodeByItemId.get(o.item_id) ?? ''),
-      users: provisionedUsers,
-      created,
-    };
-    this.logger.log(
-      `Provisioned ${orgCode}: ${orgItemRows.length} items, ${roleRows.length} roles, ${partyRows.length} parties`,
+      }));
+    const itemCodes: Array<{ code: string }> = await this.backendDb.query(
+      `SELECT code FROM organisation_items WHERE organization_id = $1 AND code IS NOT NULL ORDER BY code`,
+      [ctx.orgId],
     );
-    return result;
+    const users =
+      ctx.provisionedUsers ??
+      (await this.userRepository.find({ where: { organizationId: ctx.orgId } })).map((u) => ({
+        username: u.username,
+        password: ctx.plainPassword ?? '',
+        roles: [],
+        organizationId: ctx.orgId,
+        locationId: u.locationId,
+        email: u.email ?? null,
+      }));
+
+    return {
+      organizationId: ctx.orgId,
+      organizationCode: ctx.orgCode,
+      organizationName: ctx.orgName,
+      locations: { hq: ctx.hq!, store: ctx.store! },
+      priceList,
+      stockLocations: {
+        sale,
+        main: main
+          ? { id: main.id, code: main.code, name: main.name }
+          : { id: '', code: 'MAIN_STOCK', name: '' },
+        returnLocation: returnLocation
+          ? { id: returnLocation.id, code: returnLocation.code, name: returnLocation.name }
+          : { id: '', code: 'RETURN_STOCK', name: '' },
+      },
+      warehouses: warehouse
+        ? [{ id: warehouse.id, code: warehouse.code, name: warehouse.name }]
+        : [],
+      parties,
+      whitelistedItemCodes: itemCodes.map((row) => row.code),
+      users,
+      created: ctx.created,
+    };
   }
 
   // Hard teardown of an organisation and everything provisioned for it.
@@ -918,6 +1283,27 @@ export class ProvisionService {
 
     const tables = [...identityResults, ...backendResults, ...emrResults];
     const failures = tables.filter((r) => r.outcome !== 'cleaned');
+
+    // Drop the provisioning job before the organization row. If the job row
+    // survived, resume-on-boot would re-create the tenant we just deleted.
+    if (failures.length === 0) {
+      try {
+        await identityDb.query(
+          'DELETE FROM "provisioning_jobs" WHERE organization_id = $1',
+          [org.id],
+        );
+      } catch (err: any) {
+        failures.push({
+          name: 'identity.provisioning_jobs',
+          table: 'provisioning_jobs',
+          outcome: 'failed',
+          deleted: 0,
+          attempts: 1,
+          error: err?.message ? String(err.message) : 'could not delete provisioning job',
+          code: err?.code,
+        });
+      }
+    }
 
     // The organizations row is the retry marker: delete it only after EVERY
     // target is clean. Previously it was deleted as soon as the identity tables
