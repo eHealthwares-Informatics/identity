@@ -11,11 +11,13 @@ import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../../auth/repositories/refresh-token.repository';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
+import { LoginSessionService } from './login-session.service';
 import {
   ORG_REPOSITORY,
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
+  TOKEN_HASHER,
   TOKEN_ISSUER,
   USER_REPOSITORY,
 } from './identity.di-tokens';
@@ -33,10 +35,18 @@ export class LoginUseCase {
     private readonly tokenIssuer: TokenIssuerPort,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    /**
+     * Fast digest used to *look up* refresh tokens (see the refresh/logout use
+     * cases). `PASSWORD_HASHER` is a salted KDF, so hashing a refresh token
+     * with it produces a digest that can never match a later lookup.
+     */
+    @Inject(TOKEN_HASHER)
+    private readonly tokenHasher: PasswordHasherPort,
     @Inject(ORG_REPOSITORY)
     private readonly organizationRepository: OrganizationRepository,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
+    private readonly loginSessionService: LoginSessionService,
   ) {
     this.logger = new Logger(LoginUseCase.name);
   }
@@ -46,7 +56,9 @@ export class LoginUseCase {
   async execute(
     payload: LoginDto,
     organizationHeader?: string,
-  ): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
+  ): Promise<
+    Awaited<ReturnType<TokenIssuerPort['issuePair']>> & { sessionId?: string }
+  > {
     const identifier = payload.username.trim();
 
     // Resolve the tenant scope. Usernames are only unique per organisation
@@ -139,12 +151,29 @@ export class LoginUseCase {
       },
     );
 
-    const refreshTokenHash = await this.passwordHasher.hash(tokenPair.refreshToken);
+    // Token digests are looked up by value on refresh/logout, so they must use
+    // the same deterministic hash the lookups use (TOKEN_HASHER / SHA-256).
+    const refreshTokenHash = await this.tokenHasher.hash(tokenPair.refreshToken);
+    const refreshTokenExpiresAt = new Date(
+      Date.now() + tokenPair.refreshTokenExpiresIn * 1000,
+    );
     await this.refreshTokenRepository.persist(
       resolved.id,
       refreshTokenHash,
-      new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
+      refreshTokenExpiresAt,
     );
+
+    // Audit: one row per login (time, ip, user-agent, method, expiry). The
+    // service swallows failures — a missing audit row must never fail a login.
+    const sessionId = await this.loginSessionService.start({
+      userId: resolved.id,
+      username: resolved.username,
+      organizationId: resolved.organizationId ?? null,
+      channel: 'console',
+      loginMethod: 'password',
+      refreshTokenJti: tokenPair.refreshTokenJti,
+      expiresAt: refreshTokenExpiresAt,
+    });
 
     await this.loginEventRepo.save({
       userId: resolved.id,
@@ -156,6 +185,6 @@ export class LoginUseCase {
       `Login succeeded: userId=${resolved.id} username=${resolved.username} org=${resolved.organizationId ?? null}`,
     );
 
-    return tokenPair;
+    return { ...tokenPair, ...(sessionId ? { sessionId } : {}) };
   }
 }

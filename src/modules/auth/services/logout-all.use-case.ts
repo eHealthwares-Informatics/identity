@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import type { TokenIssuerPort } from './token-issuer.port';
+import { LoginSessionService } from './login-session.service';
 import { REFRESH_TOKEN_REPOSITORY, TOKEN_ISSUER } from './identity.di-tokens';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class LogoutAllUseCase {
     private readonly tokenIssuer: TokenIssuerPort,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly loginSessionService: LoginSessionService,
   ) {}
 
   async execute(authHeader: string | undefined, refreshToken?: string): Promise<void> {
@@ -47,5 +49,6 @@ export class LogoutAllUseCase {
     }
 
     await this.refreshTokenRepository.revokeAllForUser(userId);
+    await this.loginSessionService.endAllForUser(userId, 'logout_all');
   }
 }

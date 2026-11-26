@@ -59,6 +59,14 @@ export class AuthResponseDto {
   @ApiProperty()
   refreshTokenExpiresIn!: number;
 
+  /** `jti` of the issued refresh token — correlates with the session audit row. */
+  @ApiPropertyOptional()
+  refreshTokenJti?: string;
+
+  /** Session audit row created for this login (`GET /auth/sessions`). */
+  @ApiPropertyOptional()
+  sessionId?: string;
+
   /** Present on website/shopper sign-in (password, OTP and OAuth alike). */
   @ApiPropertyOptional({ type: AuthUserDto })
   user?: AuthUserDto;

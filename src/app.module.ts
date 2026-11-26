@@ -10,6 +10,8 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { LocationsModule } from './modules/locations/locations.module';
 import { ProvisionModule } from './modules/provision/provision.module';
 import { OrganizationDomainResolverMiddleware } from './common/middleware/organization-domain.resolver.middleware';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { RequestContextModule } from './common/request-context/request-context.module';
 
 // Named connections used by the provisioner to reach the rxsoft backend and
 // emr databases (same PostgreSQL instance as identity in dev). Mandatory:
@@ -35,6 +37,7 @@ const provisionedConnection = (envPrefix: string, defaultDb: string) =>
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    RequestContextModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService): TypeOrmModuleOptions => {
@@ -67,7 +70,9 @@ const provisionedConnection = (envPrefix: string, defaultDb: string) =>
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(OrganizationDomainResolverMiddleware)
+      // Origin (ip / user-agent) first: everything downstream, including the
+      // session audit rows, reads it.
+      .apply(RequestContextMiddleware, OrganizationDomainResolverMiddleware)
       .forRoutes('*');
   }
 }

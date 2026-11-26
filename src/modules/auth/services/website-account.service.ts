@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { AuthActionTokenOrmEntity, type AuthActionPurpose } from '../entities/auth-action-token.orm-entity';
 import { UserOrmEntity } from '../../users/entities/user.orm-entity';
 import type { PasswordHasherPort } from './password-hasher.port';
-import { PASSWORD_HASHER } from './identity.di-tokens';
+import { PASSWORD_HASHER, TOKEN_HASHER } from './identity.di-tokens';
 import { ConversationClient } from './conversation-client.service';
 
 const RESET_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -28,6 +28,13 @@ export class WebsiteAccountService {
     private readonly tokenRepo: Repository<AuthActionTokenOrmEntity>,
     @Inject(PASSWORD_HASHER)
     private readonly passwordHasher: PasswordHasherPort,
+    /**
+     * Action tokens (password reset / email verify) are single-use secrets that
+     * are looked up by digest, so they need the deterministic TOKEN_HASHER —
+     * the salted password KDF could never produce a matching lookup key.
+     */
+    @Inject(TOKEN_HASHER)
+    private readonly tokenHasher: PasswordHasherPort,
     private readonly conversationClient: ConversationClient,
     private readonly configService: ConfigService,
   ) {}
@@ -106,7 +113,7 @@ export class WebsiteAccountService {
       this.tokenRepo.create({
         userId,
         purpose,
-        tokenHash: await this.passwordHasher.hash(token),
+        tokenHash: await this.tokenHasher.hash(token),
         expiresAt: new Date(Date.now() + ttlMs),
         consumedAt: null,
       }),
@@ -119,7 +126,7 @@ export class WebsiteAccountService {
     rawToken: string,
     purpose: AuthActionPurpose,
   ): Promise<AuthActionTokenOrmEntity> {
-    const tokenHash = await this.passwordHasher.hash(rawToken.trim());
+    const tokenHash = await this.tokenHasher.hash(rawToken.trim());
     const row = await this.tokenRepo.findOne({
       where: {
         tokenHash,

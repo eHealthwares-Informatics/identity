@@ -17,10 +17,12 @@ import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort, TokenPair } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
+import { LoginSessionService } from './login-session.service';
 import {
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
+  TOKEN_HASHER,
   TOKEN_ISSUER,
   USER_REPOSITORY,
 } from './identity.di-tokens';
@@ -47,13 +49,17 @@ export class ShopperAuthService {
     private readonly tokenIssuer: TokenIssuerPort,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    /** Deterministic digest — refresh tokens are looked up by value. */
+    @Inject(TOKEN_HASHER)
+    private readonly tokenHasher: PasswordHasherPort,
     private readonly conversationClient: ConversationClient,
     private readonly configService: ConfigService,
+    private readonly loginSessionService: LoginSessionService,
   ) {}
 
   private organizationId(): string {
     return this.configService.get<string>(
-      'SHOPPER_DEFAULT_ORGANIZATION_ID',
+      'DEFAULT_ORGANIZATION_ID',
       DEFAULT_ORG_ID,
     );
   }
@@ -68,9 +74,22 @@ export class ShopperAuthService {
   }
 
   private normalizePhone(phone: string): string {
-    const trimmed = phone.trim();
-    const digits = trimmed.replace(/[^0-9]/g, '');
-    return digits || trimmed;
+    const digits = phone.trim().replace(/[^0-9]/g, '');
+
+    // Accept local Nigerian formats and normalize to 234XXXXXXXXXX.
+    if (/^0[789][01]\d{8}$/.test(digits)) {
+      return `234${digits.slice(1)}`;
+    }
+    if (/^[789][01]\d{8}$/.test(digits)) {
+      return `234${digits}`;
+    }
+    if (/^234[789][01]\d{8}$/.test(digits)) {
+      return digits;
+    }
+
+    throw new BadRequestException(
+      'Enter a valid Nigerian mobile number, e.g. 08012345678.',
+    );
   }
 
   /** Send a 6-digit OTP over the selected channel. */
@@ -159,6 +178,7 @@ export class ShopperAuthService {
       roleCodes,
       organizationId,
     );
+    console.log({roleCodes, roles, organizationId})
     if (roles.length !== roleCodes.length) {
       throw new BadRequestException('mobile_shopper role is not configured');
     }
@@ -205,14 +225,27 @@ export class ShopperAuthService {
       },
     );
 
-    const refreshTokenHash = await this.passwordHasher.hash(
-      tokenPair.refreshToken,
+    const refreshTokenHash = await this.tokenHasher.hash(tokenPair.refreshToken);
+    const refreshTokenExpiresAt = new Date(
+      Date.now() + tokenPair.refreshTokenExpiresIn * 1000,
     );
     await this.refreshTokenRepository.persist(
       user.id,
       refreshTokenHash,
-      new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
+      refreshTokenExpiresAt,
     );
+
+    // Audit: OTP verification happens on the device, so the backend only sees
+    // the sign-in call — record it as a shopper/OTP session.
+    await this.loginSessionService.start({
+      userId: user.id,
+      username: user.username,
+      organizationId: user.organizationId ?? null,
+      channel: 'shopper',
+      loginMethod: 'otp',
+      refreshTokenJti: tokenPair.refreshTokenJti,
+      expiresAt: refreshTokenExpiresAt,
+    });
 
     return tokenPair;
   }

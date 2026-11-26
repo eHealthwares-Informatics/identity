@@ -52,10 +52,9 @@ const tenant = tenantFromUser(currentUser);
 ```
 
 ## Modules
-
 | Module | Endpoints | Description |
 |---|---|---|
-| `auth` | `POST /auth/login`, `POST /auth/refresh-token`, `GET /auth/me` | Login & token management |
+| `auth` | `POST /auth/login`, `POST /auth/refresh-token`, `GET /auth/me`, `GET /auth/sessions`, `GET /auth/me/activity`, `GET /auth/session-policy` | Login & token management |
 | `users` | CRUD `/users` | User accounts with org/location assignment |
 | `roles` | CRUD `/roles` | Role definitions with permission codes |
 | `permissions` | `GET /permissions/modules` | Available permissions grouped by module |
@@ -64,10 +63,25 @@ const tenant = tenantFromUser(currentUser);
 | `provision` | `POST /provision` (202), `GET /provision/health`, `GET /provision/status/:code`, `POST /provision/:code/resume`, `DELETE /provision/:code` | Native tenant provisioning/teardown (identity + rxsoft + EMR). Async durable job (`provisioning_jobs`) + in-process worker. Public, gated by `ONBOARD_ORGANISATIONS_ENABLED` |
 | `auth` onboarding | `POST /auth/onboard-organization` (`@Public()`, 202) | Queues self-serve organisation signup; client polls `/provision/status/:code` |
 
+### Session audit (`user_sessions`)
+
+One row per login — the auditable life of a session. Written by `LoginSessionService` from the login / refresh / logout use cases (and the website + shopper sign-in paths):
+
+| Stage | Fields |
+|---|---|
+| login | `login_at`, `login_ip`, `login_user_agent`, `login_method` (`password`/`otp`/`oauth_google`/`oauth_facebook`), `channel` (`console`/`website`/`shopper`/`emr`), `refresh_token_jti`, `expires_at` |
+| refresh | `last_refresh_at`, `last_refresh_ip`, `last_refresh_user_agent`, `refresh_count`, new `refresh_token_jti`, new `expires_at` |
+| end | `logout_at`, `logout_reason` (`logout`/`logout_all`/`password_change`/`user_deactivated`/`refresh_reuse`), `logout_ip` |
+
+- `user_id` is a plain indexed uuid (no FK) so the audit outlives the account; `username` is denormalised for the same reason.
+- Rows are correlated with the token chain by `refresh_token_jti`: the refresh token's `jti` claim is stored at login and replaced on every rotation, which is how refresh/logout find the session without client changes.
+- `GET /auth/sessions?page&limit&active&userId&ip&from&to&sortBy&sortOrder` returns `{ data, meta }`; defaults to the caller's own sessions, another `userId` needs `admin`/`super_admin` (non-super-admins are scoped to their org).
+- ip / user-agent come from `RequestContextMiddleware` (`AsyncLocalStorage`) — no signature churn in use cases.
+- Audit writes are best-effort: failures are logged, never propagated, so a missing row never fails a login.
+
 ### Provisioning
 
 Production onboarding is fully native — identity must not depend on the `seed/` service.
-
 - `src/modules/provision/org-template.json` is the tenant template (roles, users, EMR departments/wards/beds, demo patients/admissions, location/price-list constants). `org-template.ts` is a thin typed wrapper.
 - `seed/src/provision/org-template.json` is a byte-identical copy for seed's local CLI/e2e provisioner. `node ../scripts/check-provision-drift.mjs` (or `npm run check:drift`) fails when the copies, the permission catalog, seed `permissions.json`/`role_permissions.json`, or the frontend module list diverge.
 - `GET /provision/status/:code` returns `counts` for every table the provisioner writes (identity/backend/emr). The onboarding e2e uses it to prove a full tenant was created and that deprovision empties the EMR clinical block too.

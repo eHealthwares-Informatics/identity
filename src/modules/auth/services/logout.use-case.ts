@@ -3,6 +3,7 @@ import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
+import { LoginSessionService } from './login-session.service';
 import { TOKEN_HASHER, REFRESH_TOKEN_REPOSITORY, TOKEN_ISSUER } from './identity.di-tokens';
 
 @Injectable()
@@ -14,13 +15,16 @@ export class LogoutUseCase {
     private readonly tokenHasher: PasswordHasherPort,
     @Inject(TOKEN_ISSUER)
     private readonly tokenIssuer: TokenIssuerPort,
+    private readonly loginSessionService: LoginSessionService,
   ) {}
 
   async execute(payload: RefreshTokenDto): Promise<void> {
     let userId: string | undefined;
+    let jti: string | undefined;
     try {
       const decoded = await this.tokenIssuer.verifyRefreshToken(payload.refreshToken);
       userId = decoded.sub;
+      jti = decoded.jti;
     } catch {
       userId = undefined;
     }
@@ -30,5 +34,8 @@ export class LogoutUseCase {
 
     const tokenHash = await this.tokenHasher.hash(payload.refreshToken);
     await this.refreshTokenRepository.revoke(userId, tokenHash);
+
+    // Audit: close the session this token belongs to.
+    await this.loginSessionService.endByRefreshJti(userId, jti, 'logout');
   }
 }

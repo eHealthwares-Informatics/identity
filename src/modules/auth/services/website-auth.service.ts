@@ -17,10 +17,13 @@ import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort, TokenPair } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
+import { LoginSessionService } from './login-session.service';
+import type { LoginMethod, SessionChannel } from '../entities/user-session.orm-entity';
 import {
   PASSWORD_HASHER,
   REFRESH_TOKEN_REPOSITORY,
   ROLE_REPOSITORY,
+  TOKEN_HASHER,
   TOKEN_ISSUER,
   USER_REPOSITORY,
 } from './identity.di-tokens';
@@ -40,6 +43,11 @@ export type OAuthChannelConfig = {
 };
 
 export type OAuthProvider = 'google' | 'facebook';
+
+/** Which session `loginMethod` an OAuth provider maps onto (audit field). */
+function oauthMethod(info: OAuthUserInfo): LoginMethod {
+  return info.provider === 'facebook' ? 'oauth_facebook' : 'oauth_google';
+}
 
 /**
  * Normalised identity-provider profile. Everything except the provider id is
@@ -149,7 +157,11 @@ export class WebsiteAuthService {
     private readonly tokenIssuer: TokenIssuerPort,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    /** Deterministic digest — refresh tokens are looked up by value. */
+    @Inject(TOKEN_HASHER)
+    private readonly tokenHasher: PasswordHasherPort,
     private readonly configService: ConfigService,
+    private readonly loginSessionService: LoginSessionService,
   ) {}
 
   private organizationId(): string {
@@ -306,7 +318,7 @@ export class WebsiteAuthService {
     await this.otpRepo.update({ id: otp.id }, { consumedAt: new Date() });
 
     const user = await this.findOrCreateWebsiteUserByPhone(phone);
-    return this.issueForUser(user);
+    return this.issueForUser(user, { channel: 'website', method: 'otp' });
   }
 
   /** Sign in (or auto-register) via a verified Google identity. */
@@ -712,7 +724,7 @@ export class WebsiteAuthService {
     if (existing) {
       const synced = this.syncProfile(existing, info);
       const saved = synced ? await this.userRepository.update(synced) : existing;
-      return this.issueForUser(saved);
+      return this.issueForUser(saved, { channel, method: oauthMethod(info) });
     }
 
     const roles = await this.roleRepository.listByCodes(
@@ -747,7 +759,7 @@ export class WebsiteAuthService {
     );
     await this.userRepository.create(user);
     this.logger.log(`Created ${info.provider} user ${username} (${channel})`);
-    return this.issueForUser(user);
+    return this.issueForUser(user, { channel, method: oauthMethod(info) });
   }
 
   /** Match an existing account for a provider identity, most specific first. */
@@ -957,7 +969,10 @@ export class WebsiteAuthService {
     };
   }
 
-  private async issueForUser(user: User): Promise<WebsiteAuthResult> {
+  private async issueForUser(
+    user: User,
+    origin: { channel?: SessionChannel; method?: LoginMethod } = {},
+  ): Promise<WebsiteAuthResult> {
     const roles = user.organizationId
       ? await this.roleRepository.listByCodes(user.roleCodes, user.organizationId)
       : [];
@@ -987,14 +1002,26 @@ export class WebsiteAuthService {
       },
     );
 
-    const refreshTokenHash = await this.passwordHasher.hash(
-      tokenPair.refreshToken,
+    const refreshTokenHash = await this.tokenHasher.hash(tokenPair.refreshToken);
+    const refreshTokenExpiresAt = new Date(
+      Date.now() + tokenPair.refreshTokenExpiresIn * 1000,
     );
     await this.refreshTokenRepository.persist(
       user.id,
       refreshTokenHash,
-      new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
+      refreshTokenExpiresAt,
     );
+
+    // Audit: one row per sign-in, tagged with the client + method used.
+    await this.loginSessionService.start({
+      userId: user.id,
+      username: user.username,
+      organizationId: user.organizationId ?? null,
+      channel: origin.channel ?? 'website',
+      loginMethod: origin.method ?? 'otp',
+      refreshTokenJti: tokenPair.refreshTokenJti,
+      expiresAt: refreshTokenExpiresAt,
+    });
 
     // OAuth sign-up fills the profile columns from the provider; returning them
     // here is what lets the app show a real name instead of "Google user".

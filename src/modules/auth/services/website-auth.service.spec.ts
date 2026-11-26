@@ -12,6 +12,7 @@ const TOKEN_PAIR = {
   refreshToken: 'rt',
   accessTokenExpiresIn: 900,
   refreshTokenExpiresIn: 604800,
+  refreshTokenJti: 'jti-1',
 };
 
 function makeUser(overrides: Partial<Record<string, unknown>> = {}): User {
@@ -79,9 +80,16 @@ function buildHarness(overrides: Record<string, string> = {}): Harness {
       needsRehash: jest.fn().mockReturnValue(false),
   };
 
+  const tokenHasher: jest.Mocked<PasswordHasherPort> = {
+    verify: jest.fn(),
+    hash: jest.fn().mockResolvedValue('hashed'),
+    needsRehash: jest.fn().mockReturnValue(false),
+  };
+
   const tokenIssuer: jest.Mocked<TokenIssuerPort> = {
     issuePair: jest.fn().mockResolvedValue(TOKEN_PAIR),
     verifyRefreshToken: jest.fn(),
+    getPolicy: jest.fn(),
   };
 
   const refreshTokenRepository: jest.Mocked<RefreshTokenRepository> = {
@@ -98,8 +106,10 @@ function buildHarness(overrides: Record<string, string> = {}): Harness {
     passwordHasher,
     tokenIssuer,
     refreshTokenRepository,
+    tokenHasher,
     // ConfigService is structural in these tests (get(key, fallback)).
     configService as never,
+    { start: jest.fn() } as never,
   );
 
   return { service, userRepository, roleRepository, tokenIssuer };

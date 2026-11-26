@@ -4,6 +4,7 @@ import type { UserRepository } from '../repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RefreshTokenRepository } from '../../auth/repositories/refresh-token.repository';
+import { LoginSessionService } from '../../auth/services/login-session.service';
 import { User } from '../domains/user.entity';
 import { Role } from '../../roles/domains/role.entity';
 
@@ -65,22 +66,59 @@ describe('UpdateUserUseCase', () => {
     };
     refreshTokenRepository.revokeAllForUser.mockResolvedValue(undefined);
 
+    const loginSessionService = {
+      endAllForUser: jest.fn().mockResolvedValue(0),
+    } as unknown as LoginSessionService;
+
     const useCase = new UpdateUserUseCase(
       userRepository,
       passwordHasher,
       roleRepository,
       refreshTokenRepository,
+      loginSessionService,
     );
-    return { useCase, userRepository, roleRepository, passwordHasher, refreshTokenRepository };
+    return {
+      useCase,
+      userRepository,
+      roleRepository,
+      passwordHasher,
+      refreshTokenRepository,
+      loginSessionService,
+    };
   };
 
   it('revokes all refresh tokens when a new password is set', async () => {
-    const { useCase, passwordHasher, refreshTokenRepository } = createUseCase();
+    const { useCase, passwordHasher, refreshTokenRepository, loginSessionService } =
+      createUseCase();
 
     await useCase.execute('user-1', { password: 'new-password' }, 'org-1');
 
     expect(passwordHasher.hash).toHaveBeenCalledWith('new-password');
     expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('user-1');
+    // Audit: open sessions are closed with the password-change reason.
+    expect(loginSessionService.endAllForUser).toHaveBeenCalledWith(
+      'user-1',
+      'password_change',
+    );
+  });
+
+  it('closes open sessions when the account is deactivated', async () => {
+    const { useCase, loginSessionService } = createUseCase();
+
+    await useCase.execute('user-1', { isActive: false }, 'org-1');
+
+    expect(loginSessionService.endAllForUser).toHaveBeenCalledWith(
+      'user-1',
+      'user_deactivated',
+    );
+  });
+
+  it('leaves open sessions alone for a plain profile edit', async () => {
+    const { useCase, loginSessionService } = createUseCase();
+
+    await useCase.execute('user-1', { email: 'new@example.com' }, 'org-1');
+
+    expect(loginSessionService.endAllForUser).not.toHaveBeenCalled();
   });
 
   it('keeps the existing password hash and does not revoke sessions when password is omitted', async () => {

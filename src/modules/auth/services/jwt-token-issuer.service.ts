@@ -6,6 +6,7 @@ import {
   TokenIssuerPort,
   TokenPair,
   TokenPayload,
+  TokenPolicy,
 } from './token-issuer.port';
 
 @Injectable()
@@ -54,8 +55,9 @@ export class JwtTokenIssuerService implements TokenIssuerPort {
       this.refreshTokenExpiresIn,
     );
 
+    const refreshTokenJti = randomUUID();
     const refreshToken = await this.jwtService.signAsync(
-      { ...payload, jti: randomUUID() },
+      { ...payload, jti: refreshTokenJti },
       {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'admin-refresh-secret'),
         expiresIn: refreshExpiresIn,
@@ -67,6 +69,15 @@ export class JwtTokenIssuerService implements TokenIssuerPort {
       refreshToken,
       accessTokenExpiresIn: accessExpiresIn,
       refreshTokenExpiresIn: refreshExpiresIn,
+      refreshTokenJti,
+    };
+  }
+
+  getPolicy(): TokenPolicy {
+    return {
+      defaultAccessTokenMinutes: this.defaultAccessTokenExpiresIn,
+      maxAccessTokenMinutes: this.maxAccessTokenExpiresIn,
+      refreshTokenMinutes: Math.floor(this.refreshTokenExpiresIn / 60),
     };
   }
 

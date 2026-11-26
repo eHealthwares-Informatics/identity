@@ -5,9 +5,12 @@ import {
   Get,
   Headers,
   HttpCode,
+  ForbiddenException,
   HttpStatus,
+  Inject,
   Logger,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -24,12 +27,14 @@ import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity
 import { LoginDto } from '../dto/login.dto';
 import { LogoutAllDto } from '../dto/logout-all.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { SessionListQueryDto, SessionResponseDto } from '../dto/session.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginUseCase } from '../services/login.use-case';
 import { LogoutAllUseCase } from '../services/logout-all.use-case';
 import { LogoutUseCase } from '../services/logout.use-case';
 import { RefreshTokenUseCase } from '../services/refresh-token.use-case';
 import { RegisterUseCase } from '../services/register.use-case';
+import { LoginSessionService } from '../services/login-session.service';
 import { OnboardOrganisationService } from '../services/onboard-organisation.service';
 import { ShopperAuthService } from '../services/shopper-auth.service';
 import { ShopperRequestOtpDto, ShopperVerifyOtpDto } from '../dto/shopper.dto';
@@ -51,6 +56,8 @@ import type { RequestUser } from '../../../common/decorators/current-user.decora
 import { Public } from '../../../common/decorators/public.decorator';
 import { getUserModules } from '../../roles/services/permission.data';
 import { ModuleInfoDto } from '../../roles/dto/module-info.dto';
+import { TOKEN_ISSUER } from '../services/identity.di-tokens';
+import type { TokenIssuerPort, TokenPolicy } from '../services/token-issuer.port';
 
 class MeResponse {
   @ApiProperty() id!: string;
@@ -95,6 +102,9 @@ export class AuthController {
     private readonly logoutAllUseCase: LogoutAllUseCase,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
+    @Inject(TOKEN_ISSUER)
+    private readonly tokenIssuer: TokenIssuerPort,
+    private readonly loginSessionService: LoginSessionService,
   ) {
     this.logger = new Logger(AuthController.name);
   }
@@ -315,6 +325,16 @@ export class AuthController {
     }
   }
 
+  @Public()
+  @Get('session-policy')
+  @ApiOperation({
+    summary:
+      'Token lifetimes (no secrets) — lets clients show when a session will be refreshed and when it expires',
+  })
+  getSessionPolicy(): TokenPolicy {
+    return this.tokenIssuer.getPolicy();
+  }
+
   @Get('provisioning')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -363,19 +383,80 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user login/refresh activity' })
   async activity(
     @CurrentUser() currentUser: RequestUser,
-  ): Promise<{ lastLoginAt: string | null; loginCount: number; refreshCount: number }> {
-    const [latest, loginCount, refreshCount] = await Promise.all([
+  ): Promise<{
+    lastLoginAt: string | null;
+    loginCount: number;
+    refreshCount: number;
+    activeSessions: number;
+    lastRefreshAt: string | null;
+    lastLogoutAt: string | null;
+  }> {
+    const [latest, loginCount, refreshCount, activeSessions, latestSession] = await Promise.all([
       this.loginEventRepo.findOne({
         where: { userId: currentUser.sub },
         order: { createdAt: 'DESC' },
       }),
       this.loginEventRepo.count({ where: { userId: currentUser.sub, eventType: 'login' } }),
       this.loginEventRepo.count({ where: { userId: currentUser.sub, eventType: 'refresh' } }),
+      this.loginSessionService.countActive(currentUser.sub),
+      this.loginSessionService.findLatest(currentUser.sub),
     ]);
     return {
       lastLoginAt: latest?.createdAt?.toISOString() ?? null,
       loginCount,
       refreshCount,
+      activeSessions,
+      lastRefreshAt: latestSession?.lastRefreshAt?.toISOString() ?? null,
+      lastLogoutAt: latestSession?.logoutAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * Session audit trail: one row per login with where it came from, when it was
+   * last refreshed and when/why it ended.
+   *
+   * Defaults to the caller's own sessions. Passing `?userId=` for someone else
+   * requires `admin` / `super_admin`, and non-super-admins are scoped to their
+   * own organisation.
+   */
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List login sessions (audit trail)' })
+  async sessions(
+    @CurrentUser() currentUser: RequestUser,
+    @Query() query: SessionListQueryDto,
+  ): Promise<{ data: SessionResponseDto[]; meta: { page: number; limit: number; total: number } }> {
+    const isSuperAdmin = currentUser.roles?.includes('super_admin') ?? false;
+    const isAdmin = isSuperAdmin || (currentUser.roles?.includes('admin') ?? false);
+    const targetUserId = query.userId ?? currentUser.sub;
+
+    if (targetUserId !== currentUser.sub && !isAdmin) {
+      throw new ForbiddenException('You can only read your own sessions');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 25;
+    const { data, total } = await this.loginSessionService.list({
+      userId: targetUserId,
+      // A non-super-admin admin only sees sessions inside their organisation.
+      organizationId:
+        targetUserId === currentUser.sub || isSuperAdmin
+          ? undefined
+          : currentUser.organizationId || undefined,
+      active: query.active === undefined ? undefined : query.active === 'true',
+      ip: query.ip?.trim() || undefined,
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+      limit,
+      offset: (page - 1) * limit,
+    });
+
+    return {
+      data: data as SessionResponseDto[],
+      meta: { page, limit, total },
     };
   }
 }
