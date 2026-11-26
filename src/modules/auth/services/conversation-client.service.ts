@@ -55,15 +55,22 @@ export class ConversationClient {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`conversation responded ${res.status}: ${text}`);
+        throw new Error(
+          data?.message || `conversation responded ${res.status}`,
+        );
+      }
+      if (data?.status === 'FAILED') {
+        throw new Error(
+          data?.payload?.error || data?.message || 'SMS provider rejected the message',
+        );
       }
     } catch (error: any) {
       this.logger.error(
         `Failed to send ${recipient.code} message to ${recipient.phone ?? recipient.email}: ${error.message}`,
       );
-      throw new BadRequestException('Could not send message');
+      throw new BadRequestException(error.message || 'Could not send message');
     }
   }
 }

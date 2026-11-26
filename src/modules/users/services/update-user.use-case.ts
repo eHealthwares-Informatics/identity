@@ -10,6 +10,7 @@ import type { UserRepository } from '../repositories/user.repository';
 import type { PasswordHasherPort } from '../../auth/services/password-hasher.port';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { RefreshTokenRepository } from '../../auth/repositories/refresh-token.repository';
+import { LoginSessionService } from '../../auth/services/login-session.service';
 import { User, type UserProfile } from '../domains/user.entity';
 import {
   PASSWORD_HASHER,
@@ -56,6 +57,7 @@ export class UpdateUserUseCase {
     private readonly roleRepository: RoleRepository,
     @Inject(REFRESH_TOKEN_REPOSITORY)
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    private readonly loginSessionService: LoginSessionService,
   ) {
     this.logger = new Logger(UpdateUserUseCase.name);
   }
@@ -131,7 +133,13 @@ export class UpdateUserUseCase {
     // credentials can no longer be used (force re-login on all devices).
     if (passwordChanged) {
       await this.refreshTokenRepository.revokeAllForUser(userId);
+      await this.loginSessionService.endAllForUser(userId, 'password_change');
       this.logger.log(`User password changed: id=${userId} all sessions revoked`);
+    }
+
+    // Deactivating an account is also an audit-worthy session end.
+    if (user.isActive && payload.isActive === false) {
+      await this.loginSessionService.endAllForUser(userId, 'user_deactivated');
     }
 
     this.logger.log(`User updated: id=${saved.id} organizationId=${organizationId ?? null}`);

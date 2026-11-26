@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './controllers/auth.controller';
 import { LoginUseCase } from './services/login.use-case';
+import { LoginSessionService } from './services/login-session.service';
 import { LogoutAllUseCase } from './services/logout-all.use-case';
 import { LogoutUseCase } from './services/logout.use-case';
 import { RefreshTokenUseCase } from './services/refresh-token.use-case';
@@ -16,6 +17,8 @@ import { JwtTokenIssuerService } from './services/jwt-token-issuer.service';
 import { Sha256PasswordHasherService } from './services/sha256-password-hasher.service';
 import { ScryptPasswordHasherService } from './services/scrypt-password-hasher.service';
 import { TypeormRefreshTokenRepository } from './repositories/typeorm-refresh-token.repository';
+import { TypeormUserSessionRepository } from './repositories/typeorm-user-session.repository';
+import { UserSessionOrmEntity } from './entities/user-session.orm-entity';
 import { TypeormUserRepository } from '../users/repositories/typeorm-user.repository';
 import { TypeormRoleRepository } from '../roles/repositories/typeorm-role.repository';
 import { TypeormLocationRepository } from '../locations/repositories/typeorm-location.repository';
@@ -39,6 +42,7 @@ import {
   TOKEN_HASHER,
   TOKEN_ISSUER,
   USER_REPOSITORY,
+  USER_SESSION_REPOSITORY,
 } from './services/identity.di-tokens';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -52,6 +56,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
       PhoneOtpOrmEntity,
       AuthActionTokenOrmEntity,
       UserLoginEventOrmEntity,
+      UserSessionOrmEntity,
       UserOrmEntity,
       RoleOrmEntity,
       PermissionOrmEntity,
@@ -78,6 +83,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     TypeormLocationRepository,
     TypeormOrganizationRepository,
     TypeormRefreshTokenRepository,
+    TypeormUserSessionRepository,
+    LoginSessionService,
+    { provide: USER_SESSION_REPOSITORY, useExisting: TypeormUserSessionRepository },
     { provide: USER_REPOSITORY, useExisting: TypeormUserRepository },
     { provide: ROLE_REPOSITORY, useExisting: TypeormRoleRepository },
     { provide: LOCATION_REPOSITORY, useExisting: TypeormLocationRepository },
@@ -95,6 +103,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     ROLE_REPOSITORY,
     LOCATION_REPOSITORY,
     REFRESH_TOKEN_REPOSITORY,
+    USER_SESSION_REPOSITORY,
+    LoginSessionService,
     TOKEN_ISSUER,
     PASSWORD_HASHER,
     TOKEN_HASHER,

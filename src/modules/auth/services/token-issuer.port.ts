@@ -3,6 +3,8 @@ export interface TokenPair {
   refreshToken: string;
   accessTokenExpiresIn: number;
   refreshTokenExpiresIn: number;
+  /** `jti` of the refresh token — correlates it with the session audit row. */
+  refreshTokenJti: string;
 }
 
 export interface TokenPayload {
@@ -21,6 +23,20 @@ export interface TokenPayload {
   displayName?: string | null;
   dateOfBirth?: string | null;
   gender?: string | null;
+  /** Refresh-token id (only present on refresh tokens). */
+  jti?: string;
+}
+
+/**
+ * The lifetimes the issuer applies. Exposed so clients can explain a session
+ * timeline ("auto refreshed at …", "auto logged out at …") without hardcoding
+ * the same numbers — the effective access lifetime for a user is
+ * `min(user.loginTimeoutMinutes ?? defaultAccessTokenMinutes, maxAccessTokenMinutes)`.
+ */
+export interface TokenPolicy {
+  defaultAccessTokenMinutes: number;
+  maxAccessTokenMinutes: number;
+  refreshTokenMinutes: number;
 }
 
 export interface TokenIssuerPort {
@@ -32,4 +48,6 @@ export interface TokenIssuerPort {
     },
   ): Promise<TokenPair>;
   verifyRefreshToken(token: string): Promise<TokenPayload>;
+  /** Effective token lifetimes (no secrets). */
+  getPolicy(): TokenPolicy;
 }

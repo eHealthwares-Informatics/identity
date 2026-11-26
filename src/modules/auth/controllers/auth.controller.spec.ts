@@ -22,6 +22,8 @@ describe('AuthController.me (rxsoft-qa#800)', () => {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
+    {} as any,
     {} as any
   );
 

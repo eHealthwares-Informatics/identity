@@ -4,6 +4,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { LogoutAllUseCase } from './logout-all.use-case';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import type { TokenIssuerPort } from './token-issuer.port';
+import { LoginSessionService } from './login-session.service';
 import type { TokenPayload } from './token-issuer.port';
 
 describe('LogoutAllUseCase', () => {
@@ -28,7 +29,12 @@ describe('LogoutAllUseCase', () => {
     const tokenIssuer: jest.Mocked<TokenIssuerPort> = {
       verifyRefreshToken: jest.fn(),
       issuePair: jest.fn(),
+      getPolicy: jest.fn(),
     };
+    const loginSessionService = {
+      endByRefreshJti: jest.fn().mockResolvedValue(undefined),
+      endAllForUser: jest.fn().mockResolvedValue(0),
+    } as unknown as LoginSessionService;
     tokenIssuer.verifyRefreshToken.mockResolvedValue(tokenPayload);
 
     const jwtServiceMock = { verifyAsync: jest.fn() };
@@ -42,18 +48,22 @@ describe('LogoutAllUseCase', () => {
       tokenIssuer,
       jwtService,
       configService,
+      loginSessionService,
     );
-    return { useCase, refreshTokenRepository, tokenIssuer, jwtServiceMock };
+    return { useCase, refreshTokenRepository, tokenIssuer, jwtServiceMock, loginSessionService };
   };
 
   it('revokes all sessions for the user identified by a valid Bearer access token', async () => {
-    const { useCase, jwtServiceMock, refreshTokenRepository } = createUseCase();
+    const { useCase, jwtServiceMock, refreshTokenRepository, loginSessionService } =
+      createUseCase();
     jwtServiceMock.verifyAsync.mockResolvedValueOnce({ sub: 'user-1' });
 
     await useCase.execute('Bearer access-token');
 
     expect(jwtServiceMock.verifyAsync).toHaveBeenCalled();
     expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('user-1');
+    // Audit: every open session is closed with the logout-all reason.
+    expect(loginSessionService.endAllForUser).toHaveBeenCalledWith('user-1', 'logout_all');
   });
 
   it('falls back to the refresh token when the access token is expired/invalid', async () => {

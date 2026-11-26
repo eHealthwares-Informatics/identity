@@ -5,6 +5,7 @@ import type { RoleRepository } from '../../roles/repositories/role.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
+import { LoginSessionService } from './login-session.service';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
 import { User } from '../../users/domains/user.entity';
 
@@ -56,17 +57,25 @@ describe('LoginUseCase', () => {
       needsRehash: jest.fn().mockReturnValue(false),
     };
     passwordHasher.verify.mockImplementation(async (_raw, digest) => digest === 'valid-hash');
-    passwordHasher.hash.mockResolvedValue('token-hash');
+    passwordHasher.hash.mockResolvedValue('password-hash');
+
+    const tokenHasher: jest.Mocked<PasswordHasherPort> = {
+      verify: jest.fn(),
+      hash: jest.fn().mockResolvedValue('token-hash'),
+      needsRehash: jest.fn().mockReturnValue(false),
+    };
 
     const tokenPair = {
       accessToken: 'at',
       refreshToken: 'rt',
       accessTokenExpiresIn: 900,
       refreshTokenExpiresIn: 604800,
+      refreshTokenJti: 'jti-1',
     };
     const tokenIssuer: jest.Mocked<TokenIssuerPort> = {
       issuePair: jest.fn(),
       verifyRefreshToken: jest.fn(),
+      getPolicy: jest.fn(),
     };
     tokenIssuer.issuePair.mockResolvedValue(tokenPair);
 
@@ -93,16 +102,36 @@ describe('LoginUseCase', () => {
       delete: jest.fn(),
     };
 
+    const loginSessionService = {
+      start: jest.fn().mockResolvedValue('session-1'),
+      recordRefresh: jest.fn(),
+      endByRefreshJti: jest.fn(),
+      endAllForUser: jest.fn(),
+      countActive: jest.fn(),
+      findLatest: jest.fn(),
+    } as unknown as LoginSessionService;
+
     const useCase = new LoginUseCase(
       userRepository,
       roleRepository,
       passwordHasher,
       tokenIssuer,
       refreshTokenRepository,
+      tokenHasher,
       organizationRepository as never,
       loginEventRepo as never,
+      loginSessionService,
     );
-    return { useCase, userRepository, passwordHasher, tokenIssuer, refreshTokenRepository, user };
+    return {
+      useCase,
+      userRepository,
+      passwordHasher,
+      tokenHasher,
+      tokenIssuer,
+      refreshTokenRepository,
+      loginSessionService,
+      user,
+    };
   };
 
   it('passes the per-user loginTimeoutMinutes into token issuance', async () => {
@@ -115,6 +144,18 @@ describe('LoginUseCase', () => {
     const { useCase, tokenIssuer } = createAll();
     await useCase.execute({ username: 'jane', password: 'whatever' });
     expect(tokenIssuer.issuePair).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ loginTimeoutMinutes: undefined }));
+  });
+
+  // Regression: the stored digest is looked up by value on refresh/logout, so
+  // it must come from the deterministic TOKEN_HASHER. Hashing it with the
+  // salted password KDF made every /auth/refresh-token call 401 (sessions died
+  // as soon as the access token expired).
+  it('never hashes a refresh token with the password hasher', async () => {
+    const { useCase, passwordHasher } = createAll();
+
+    await useCase.execute({ username: 'jane', password: 'valid-hash' });
+
+    expect(passwordHasher.hash).not.toHaveBeenCalledWith('rt');
   });
 
   it('rejects unknown users with UnauthorizedException', async () => {
@@ -183,9 +224,9 @@ describe('LoginUseCase', () => {
   });
 
   it('persists the refresh token hash with the correct expiry window', async () => {
-    const { useCase, passwordHasher, refreshTokenRepository } = createAll();
+    const { useCase, tokenHasher, refreshTokenRepository } = createAll();
     await useCase.execute({ username: 'jane', password: 'whatever' });
-    expect(passwordHasher.hash).toHaveBeenCalledWith('rt');
+    expect(tokenHasher.hash).toHaveBeenCalledWith('rt');
     expect(refreshTokenRepository.persist).toHaveBeenCalledWith(
       'user-1',
       'token-hash',

@@ -8,6 +8,7 @@ import type { TokenIssuerPort } from './token-issuer.port';
 import type { UserRepository } from '../../users/repositories/user.repository';
 import type { RoleRepository } from '../../roles/repositories/role.repository';
 import { UserLoginEventOrmEntity } from '../entities/user-login-event.orm-entity';
+import { LoginSessionService } from './login-session.service';
 import {
   TOKEN_HASHER,
   REFRESH_TOKEN_REPOSITORY,
@@ -31,6 +32,7 @@ export class RefreshTokenUseCase {
     private readonly roleRepository: RoleRepository,
     @InjectRepository(UserLoginEventOrmEntity)
     private readonly loginEventRepo: Repository<UserLoginEventOrmEntity>,
+    private readonly loginSessionService: LoginSessionService,
   ) {}
 
   async execute(payload: RefreshTokenDto): Promise<Awaited<ReturnType<TokenIssuerPort['issuePair']>>> {
@@ -38,12 +40,24 @@ export class RefreshTokenUseCase {
 
     const user = await this.userRepository.findById(decoded.sub);
     if (!user || !user.isActive) {
+      await this.loginSessionService.endByRefreshJti(
+        decoded.sub,
+        decoded.jti,
+        'user_deactivated',
+      );
       throw new UnauthorizedException('Invalid refresh token');
     }
 
     const tokenHash = await this.tokenHasher.hash(payload.refreshToken);
     const isValid = await this.refreshTokenRepository.isValid(user.id, tokenHash);
     if (!isValid) {
+      // The token verified but is no longer in the store: either it was already
+      // rotated (replay) or revoked. Close the audited session accordingly.
+      await this.loginSessionService.endByRefreshJti(
+        user.id,
+        decoded.jti,
+        'refresh_reuse',
+      );
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -69,11 +83,18 @@ export class RefreshTokenUseCase {
     );
 
     const newTokenHash = await this.tokenHasher.hash(tokenPair.refreshToken);
+    const newExpiresAt = new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000);
     await this.refreshTokenRepository.persist(
       user.id,
       newTokenHash,
-      new Date(Date.now() + tokenPair.refreshTokenExpiresIn * 1000),
+      newExpiresAt,
     );
+
+    // Audit: same session row, new rotation instant / ip / jti.
+    await this.loginSessionService.recordRefresh(user.id, decoded.jti, {
+      refreshTokenJti: tokenPair.refreshTokenJti,
+      expiresAt: newExpiresAt,
+    });
 
     await this.loginEventRepo.save({
       userId: user.id,

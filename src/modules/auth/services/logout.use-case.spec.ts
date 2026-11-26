@@ -2,6 +2,7 @@ import { LogoutUseCase } from './logout.use-case';
 import type { RefreshTokenRepository } from '../repositories/refresh-token.repository';
 import type { PasswordHasherPort } from './password-hasher.port';
 import type { TokenIssuerPort } from './token-issuer.port';
+import { LoginSessionService } from './login-session.service';
 import type { TokenPayload } from './token-issuer.port';
 
 describe('LogoutUseCase', () => {
@@ -13,6 +14,7 @@ describe('LogoutUseCase', () => {
     roles: [],
     permissions: [],
     email: 'jane@example.com',
+    jti: 'jti-1',
   };
 
   const createUseCase = () => {
@@ -34,11 +36,21 @@ describe('LogoutUseCase', () => {
     const tokenIssuer: jest.Mocked<TokenIssuerPort> = {
       verifyRefreshToken: jest.fn(),
       issuePair: jest.fn(),
+      getPolicy: jest.fn(),
     };
+    const loginSessionService = {
+      endByRefreshJti: jest.fn().mockResolvedValue(undefined),
+      endAllForUser: jest.fn().mockResolvedValue(0),
+    } as unknown as LoginSessionService;
     tokenIssuer.verifyRefreshToken.mockResolvedValue(tokenPayload);
 
-    const useCase = new LogoutUseCase(refreshTokenRepository, passwordHasher, tokenIssuer);
-    return { useCase, refreshTokenRepository, passwordHasher, tokenIssuer };
+    const useCase = new LogoutUseCase(
+      refreshTokenRepository,
+      passwordHasher,
+      tokenIssuer,
+      loginSessionService,
+    );
+    return { useCase, refreshTokenRepository, passwordHasher, tokenIssuer, loginSessionService };
   };
 
   it('revokes the hash of the provided refresh token', async () => {
@@ -46,6 +58,16 @@ describe('LogoutUseCase', () => {
     await useCase.execute({ refreshToken: 'rt-1' });
     expect(passwordHasher.hash).toHaveBeenCalledWith('rt-1');
     expect(refreshTokenRepository.revoke).toHaveBeenCalledWith('user-1', 'hash:rt-1');
+  });
+
+  it('closes the audited session bound to the token jti', async () => {
+    const { useCase, loginSessionService } = createUseCase();
+    await useCase.execute({ refreshToken: 'rt-1' });
+    expect(loginSessionService.endByRefreshJti).toHaveBeenCalledWith(
+      'user-1',
+      'jti-1',
+      'logout',
+    );
   });
 
   it('is a no-op when the refresh token cannot be verified (already revoked/expired)', async () => {
